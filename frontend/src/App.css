@@ -1,0 +1,603 @@
+/* Light Mode Styles */
+body {
+  background: #f7f7fa;
+  color: #222;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+.App {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+/* Header Styles */
+.App-header {
+  background: #fff;
+  color: #333;
+  padding: 10px 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+.logo {
+  font-size: 1.8em;
+  font-weight: bold; /* Keep bold */
+  color: #222; /* White text for contrast */
+  text-shadow: none;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px; /* Slightly increased gap */
+  font-size: 1.6em; /* Slightly larger icons */
+  color: #888; /* White icons */
+}
+
+.App-main {
+  flex-grow: 1;
+  padding: 40px 30px; /* Increased top/bottom padding */
+  max-width: 1200px;
+  margin: 0 auto; /* Center content */
+  width: 100%;
+  box-sizing: border-box;
+  background: none;
+}
+
+h1 {
+  font-size: 3em; /* Slightly larger */
+  margin-bottom: 15px; /* Adjusted margin */
+  color: #222; /* Darker text */
+  font-weight: 600; /* Slightly bolder */
+}
+
+.magic-text {
+  /* Adjusted gradient to match image more closely */
+  background: linear-gradient(90deg, #ff8a00, #e52e71); /* Orange to Pink gradient */
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-weight: 700; /* Bolder */
+}
+
+.subtitle {
+  font-size: 1.25em; /* Slightly larger */
+  color: #666; /* Slightly darker grey */
+  margin-bottom: 50px; /* Increased margin */
+  max-width: 600px; /* Limit width for better readability */
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.6;
+}
+
+/* Upload Area Styles */
+.upload-area {
+  margin-bottom: 40px;
+  display: flex; /* Use flex to center the box */
+  justify-content: center;
+  align-items: center;
+  min-height: 250px; /* Give it some minimum height */
+}
+
+.upload-box {
+  border: 2px dashed #bbb; /* Dashed border as in image */
+  border-radius: 10px;
+  padding: 30px; /* Adjust padding */
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+  width: 100%; /* Take available width */
+  max-width: 450px; /* Max width */
+  background: #fff; /* No background */
+  display: flex; /* Use flex to center content */
+  justify-content: center;
+  align-items: center;
+  min-height: 180px; /* Minimum height for the box */
+  box-sizing: border-box;
+  color: #333;
+}
+
+.upload-box:hover {
+  background-color: #f5f5f5; /* Very subtle hover */
+  border-color: #888;
+}
+
+/* Wrapper for centering content inside the dashed box */
+.upload-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-icon {
+  font-size: 3.5em; /* Larger icon */
+  margin-bottom: 15px;
+  color: #bbb; /* Lighter grey for icon */
+}
+
+.upload-box p {
+  margin: 4px 0; /* Adjust spacing */
+  color: #888; /* Match text color */
+  font-size: 1em;
+}
+
+.upload-hint {
+  font-size: 0.9em;
+  color: #888; /* Lighter hint text */
+}
+
+/* Processing Area Styles */
+.processing-area {
+  margin-bottom: 40px;
+  padding: 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+  max-width: 800px;
+  margin: 20px auto;
+  color: #222;
+}
+
+.uploaded-menu-image {
+  max-width: 100%;
+  max-height: 300px; /* Limit preview height */
+  border-radius: 4px;
+  margin-bottom: 20px;
+  border: 1px solid #eee;
+}
+
+/* Progress Bar Styles */
+.progress-container {
+  margin: 20px 0;
+  padding: 15px;
+  background: #f3f3f7;
+  border-radius: 8px;
+}
+
+.progress-container p {
+  margin: 0 0 10px 0;
+  font-weight: bold;
+  color: #555;
+}
+
+.progress-bar-bg {
+  background: #e0e0e0;
+  border-radius: 5px;
+  height: 20px;
+  overflow: hidden;
+  margin-bottom: 5px;
+}
+
+.progress-bar-fg {
+  background: linear-gradient(90deg, #76b852, #8DC26F); /* Green gradient */
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.5s ease-in-out;
+}
+
+.progress-container p:last-child { /* Percentage text */
+  margin-bottom: 0;
+  font-size: 0.9em;
+  color: #666;
+}
+
+/* Lavender Progress Bar Styles */
+.lavender-bar {
+  background: #f3e8ff !important;
+  border-radius: 8px;
+  margin-top: 24px;
+}
+.lavender-bar .progress-bar-bg {
+  background: #e1bee7 !important;
+}
+.lavender-bar .progress-bar-fg {
+  background: linear-gradient(90deg, #b388ff, #ce93d8) !important;
+}
+.status-bar-text {
+  text-align: center;
+  color: #7c4dff;
+  font-weight: 500;
+  font-size: 1.08em;
+  margin-top: 8px;
+}
+.global-status-bar {
+  display: none;
+}
+
+/* Action Buttons Styles */
+.action-buttons {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
+}
+
+button {
+  padding: 12px 25px;
+  font-size: 1em;
+  border: none;
+  border-radius: 25px; /* Rounded buttons */
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+  font-weight: bold;
+  background: #fff;
+  color: #222;
+  border: 1px solid #ddd;
+}
+
+button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+  color: #666;
+}
+
+/* Specific button styles */
+button:not(:disabled):nth-of-type(1) { /* Parse Only */
+  background-color: #ffe082; /* Amber */
+  color: #333;
+}
+button:not(:disabled):nth-of-type(1):hover {
+  background-color: #ffd54f;
+  transform: translateY(-1px);
+}
+
+button:not(:disabled):nth-of-type(2) { /* Parse & Generate */
+  background: linear-gradient(90deg, #ff8a00, #e52e71); /* Theme gradient */
+  color: #fff;
+}
+button:not(:disabled):nth-of-type(2):hover {
+   opacity: 0.95;
+   transform: translateY(-1px);
+}
+
+.new-menu-button { /* Upload New Menu */
+  background: #adb5bd; /* Gray */
+  color: #fff;
+}
+.new-menu-button:hover {
+  background: #868e96;
+  transform: translateY(-1px);
+}
+
+.stop-generating-button {
+  background: #e53935 !important;
+  color: #fff !important;
+  border: none;
+  border-radius: 25px;
+  font-weight: bold;
+  transition: background 0.2s;
+}
+.stop-generating-button:disabled {
+  background: #ffcdd2 !important;
+  color: #fff !important;
+  cursor: not-allowed;
+}
+
+.refresh-button {
+  background: #ff9100 !important;
+  color: #fff !important;
+  border: none;
+  border-radius: 25px;
+  font-weight: bold;
+  transition: background 0.2s;
+}
+.refresh-button:hover {
+  background: #ff6f00 !important;
+}
+
+/* Error Container Styles */
+.error-container {
+  color: #b71c1c; /* Bootstrap danger color */
+  margin: 20px auto;
+  border: 1px solid #f5c6cb; /* Lighter red border */
+  background: #fff0f0; /* Light red background */
+  padding: 15px;
+  border-radius: 8px;
+  max-width: 800px;
+  text-align: left;
+}
+
+.error-container strong {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.error-container ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+/* Results Area Styles */
+.results-area {
+  margin-top: 40px;
+}
+
+.menu-category {
+  margin-bottom: 40px;
+}
+
+.category-title {
+  display: inline-block; /* Allows background to fit content */
+  background: #f1f3f5; /* Light gray background */
+  color: #495057; /* Darker gray text */
+  padding: 8px 15px;
+  border-radius: 20px; /* Pill shape */
+  font-size: 1.1em;
+  font-weight: bold;
+  margin-bottom: 25px;
+  text-transform: uppercase; /* As seen in image */
+  letter-spacing: 1px;
+}
+
+.menu-items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); /* Responsive grid */
+  gap: 25px;
+}
+
+.menu-item-card {
+  background: #fff; /* translucent window effect */
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.07);
+  -webkit-backdrop-filter: none; /* vendor prefix */
+  backdrop-filter: none; /* blur background behind card */
+  overflow: hidden; /* Ensure image corners are rounded */
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.menu-item-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+
+.menu-item-image-container {
+  width: 100%;
+  height: 220px; /* Fixed height for scaled-down images */
+  position: relative;
+  background-color: #f0f0f0;
+  overflow: hidden;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+}
+
+.menu-item-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.5s ease-in-out;
+}
+
+.menu-item-image.loaded {
+  opacity: 1;
+}
+
+.image-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #bbb;
+  font-style: italic;
+  font-size: 0.9em;
+  background: #f0f0f0;
+}
+.image-placeholder.loading {
+  color: #666;
+}
+.image-placeholder.error {
+  color: #d32f2f;
+  background: #ffeaea;
+  font-style: normal;
+  font-weight: bold;
+  padding: 10px;
+  text-align: center;
+  font-size: 0.85em;
+  line-height: 1.3;
+}
+
+.menu-item-details {
+  padding: 15px;
+  text-align: left;
+  flex-grow: 1; /* Ensure details section takes remaining space */
+}
+
+.menu-item-name {
+  font-size: 1.2em;
+  font-weight: bold;
+  color: #222;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.menu-item-description {
+  font-size: 0.95em;
+  color: #444;
+  line-height: 1.5;
+}
+
+.menu-item-description i { /* Style for "No description" */
+  color: #999;
+}
+
+/* Modal styles for full image view */
+.modal-overlay {
+  position: fixed;
+  z-index: 1000;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s;
+}
+.modal-content {
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  max-width: 90vw;
+  max-height: 90vh;
+  padding: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: popIn 0.2s;
+}
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 18px;
+  background: none;
+  border: none;
+  font-size: 2.2em;
+  color: #888;
+  cursor: pointer;
+  z-index: 2;
+  transition: color 0.2s;
+}
+.modal-close:hover {
+  color: #e53935;
+}
+.modal-full-image {
+  max-width: 80vw;
+  max-height: 60vh;
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  display: block;
+  margin: 0 auto;
+  background: #f0f0f0;
+}
+.modal-desc-area {
+  padding: 24px 32px 28px 32px;
+  text-align: center;
+  max-width: 600px;
+}
+.modal-title {
+  font-size: 1.3em;
+  font-weight: bold;
+  margin-bottom: 10px;
+  color: #222;
+}
+.modal-desc {
+  font-size: 1.05em;
+  color: #444;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes popIn {
+  from { transform: scale(0.97); opacity: 0.7; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  h1 {
+    font-size: 2.5em; /* Adjusted */
+  }
+  .subtitle {
+    font-size: 1.1em; /* Adjusted */
+    margin-bottom: 40px;
+  }
+  .App-header {
+    padding: 10px 20px; /* Adjusted */
+  }
+  .logo {
+    font-size: 1.6em; /* Adjusted */
+  }
+  .header-actions {
+    font-size: 1.4em; /* Adjusted */
+    gap: 15px;
+  }
+  .menu-items-grid {
+    grid-template-columns: 1fr; /* Stack cards on smaller screens */
+  }
+   .action-buttons {
+    flex-direction: column; /* Stack buttons vertically */
+    align-items: center;
+  }
+  button {
+    width: 80%; /* Make buttons wider */
+    max-width: 300px;
+  }
+  .upload-box {
+    padding: 25px;
+    min-height: 160px;
+  }
+  .upload-icon {
+    font-size: 3em;
+  }
+  /* ... existing responsive styles ... */
+}
+
+@media (max-width: 480px) {
+   h1 {
+    font-size: 2em; /* Adjusted */
+  }
+   .subtitle {
+    font-size: 1em;
+   }
+   .App-main {
+    padding: 20px 15px; /* Adjusted */
+  }
+  .upload-box {
+    padding: 20px;
+    max-width: 90%;
+  }
+  .upload-icon {
+    font-size: 2.8em;
+  }
+  .upload-box p {
+    font-size: 0.95em;
+  }
+  .upload-hint {
+    font-size: 0.85em;
+  }
+  /* ... existing responsive styles ... */
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

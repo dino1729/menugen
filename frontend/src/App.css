@@ -1,9 +1,75 @@
-/* Light Mode Styles */
+/* Light/Dark Theme Variables */
+:root {
+  /* Light theme (default) */
+  --bg-color: #f7f7fa;
+  --text-color: #222;
+  --header-bg: #fff;
+  --header-bg-rgb: 255, 255, 255;
+  --header-text: #333;
+  --card-bg: #fff;
+  --card-text: #222;
+  --input-bg: #fff;
+  --input-border: #bbb;
+  --processing-area-bg: #fff;
+  --progress-bg: #f3f3f7;
+  --button-bg: #fff;
+  --button-text: #222;
+  --button-border: #ddd;
+  --error-bg: #fff0f0;
+  --error-border: #f5c6cb;
+  --error-text: #b71c1c;
+  --category-bg: #f1f3f5;
+  --category-text: #495057;
+  --icon-color: #888;
+  --card-shadow: rgba(0,0,0,0.07);
+  --card-hover-shadow: rgba(0,0,0,0.12);
+  --modal-bg: #fff;
+  --modal-text: #222;
+  --modal-shadow: rgba(0,0,0,0.18);
+  --modal-overlay: rgba(0,0,0,0.55);
+  --placeholder-bg: #f0f0f0;
+  --placeholder-text: #bbb;
+}
+
+/* Dark Theme Variables */
+body[data-theme="dark"] {
+  --bg-color: #121212;
+  --text-color: #e0e0e0;
+  --header-bg: #1e1e1e;
+  --header-bg-rgb: 30, 30, 30;
+  --header-text: #e0e0e0;
+  --card-bg: #2d2d2d;
+  --card-text: #e0e0e0;
+  --input-bg: #2d2d2d;
+  --input-border: #555;
+  --processing-area-bg: #2d2d2d;
+  --progress-bg: #1e1e1e;
+  --button-bg: #3d3d3d;
+  --button-text: #e0e0e0;
+  --button-border: #555;
+  --error-bg: #331111;
+  --error-border: #662222;
+  --error-text: #ff6b6b;
+  --category-bg: #3d3d3d;
+  --category-text: #e0e0e0;
+  --icon-color: #aaa;
+  --card-shadow: rgba(0,0,0,0.15);
+  --card-hover-shadow: rgba(0,0,0,0.25);
+  --modal-bg: #2d2d2d;
+  --modal-text: #e0e0e0;
+  --modal-shadow: rgba(0,0,0,0.35);
+  --modal-overlay: rgba(0,0,0,0.75);
+  --placeholder-bg: #3d3d3d;
+  --placeholder-text: #888;
+}
+
+/* Theme Styles */
 body {
-  background: #f7f7fa;
-  color: #222;
+  background: var(--bg-color);
+  color: var(--text-color);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease;
 }
 
 code {
@@ -16,6 +82,13 @@ code {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* App theme transition */
+.App.dark-theme,
+.App.light-theme {
+  transition: all 0.3s ease;
 }
 
 .App-logo {
@@ -31,20 +104,43 @@ code {
 
 /* Header Styles */
 .App-header {
-  background: #fff;
-  color: #333;
-  padding: 10px 30px;
+  background: transparent; /* Make transparent */
+  background-color: rgba(var(--header-bg-rgb, 255, 255, 255), 0.7); /* More translucent background */
+  color: var(--header-text);
+  padding: 12px 30px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  transition: all 0.3s ease;
+  position: fixed; /* Fixed position */
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  z-index: 1000; /* Ensure it stays on top */
+  backdrop-filter: blur(10px); /* Stronger frosted glass effect */
+  -webkit-backdrop-filter: blur(10px); /* For Safari */
+  box-sizing: border-box;
+  border-bottom: 1px solid rgba(var(--header-bg-rgb, 255, 255, 255), 0.15); /* Subtle border */
+}
+
+/* Header styles continued */
+
+/* Fallback for browsers that don't support backdrop-filter */
+@supports not ((backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px))) {
+  .App-header {
+    background-color: rgba(var(--header-bg-rgb, 255, 255, 255), 0.95); /* More opaque fallback */
+  }
 }
 
 .logo {
   font-size: 1.8em;
   font-weight: bold; /* Keep bold */
-  color: #222; /* White text for contrast */
-  text-shadow: none;
+  color: var(--header-text);
+  text-shadow: 0px 1px 2px rgba(0,0,0,0.05); /* Subtle text shadow */
+  letter-spacing: 0.5px; /* Slight letter spacing */
+  opacity: 0.95; /* Slightly increase contrast against frosted background */
 }
 
 .header-actions {
@@ -52,24 +148,57 @@ code {
   align-items: center;
   gap: 20px; /* Slightly increased gap */
   font-size: 1.6em; /* Slightly larger icons */
-  color: #888; /* White icons */
+  color: var(--icon-color);
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+  color: var(--icon-color);
+  line-height: 1;
+  width: auto;
+  height: auto;
+}
+
+.theme-toggle:hover {
+  transform: scale(1.1);
+}
+
+/* SVG icons for dark/light mode */
+.theme-toggle svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  stroke: none;
+  display: block;
+  opacity: 0.85;
 }
 
 .App-main {
   flex-grow: 1;
-  padding: 40px 30px; /* Increased top/bottom padding */
+  padding: 80px 30px 40px; /* Increased top padding to make space for fixed header */
   max-width: 1200px;
   margin: 0 auto; /* Center content */
   width: 100%;
   box-sizing: border-box;
   background: none;
+  transition: background-color 0.3s ease;
 }
 
 h1 {
   font-size: 3em; /* Slightly larger */
   margin-bottom: 15px; /* Adjusted margin */
-  color: #222; /* Darker text */
+  color: var(--text-color); /* Use variable */
   font-weight: 600; /* Slightly bolder */
+  transition: color 0.3s ease;
 }
 
 .magic-text {
@@ -83,12 +212,14 @@ h1 {
 
 .subtitle {
   font-size: 1.25em; /* Slightly larger */
-  color: #666; /* Slightly darker grey */
+  color: var(--text-color); /* Use variable */
+  opacity: 0.75; /* Make it slightly less prominent than headings */
   margin-bottom: 50px; /* Increased margin */
   max-width: 600px; /* Limit width for better readability */
   margin-left: auto;
   margin-right: auto;
   line-height: 1.6;
+  transition: color 0.3s ease;
 }
 
 /* Upload Area Styles */
@@ -101,25 +232,25 @@ h1 {
 }
 
 .upload-box {
-  border: 2px dashed #bbb; /* Dashed border as in image */
+  border: 2px dashed var(--input-border); /* Use variable */
   border-radius: 10px;
   padding: 30px; /* Adjust padding */
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.3s ease;
   width: 100%; /* Take available width */
   max-width: 450px; /* Max width */
-  background: #fff; /* No background */
+  background: var(--input-bg); /* Use variable */
   display: flex; /* Use flex to center content */
   justify-content: center;
   align-items: center;
   min-height: 180px; /* Minimum height for the box */
   box-sizing: border-box;
-  color: #333;
+  color: var(--text-color); /* Use variable */
 }
 
 .upload-box:hover {
-  background-color: #f5f5f5; /* Very subtle hover */
-  border-color: #888;
+  background-color: var(--bg-color); /* Use variable */
+  border-color: var(--text-color); /* Use variable with opacity */
 }
 
 /* Wrapper for centering content inside the dashed box */
@@ -133,30 +264,36 @@ h1 {
 .upload-icon {
   font-size: 3.5em; /* Larger icon */
   margin-bottom: 15px;
-  color: #bbb; /* Lighter grey for icon */
+  color: var(--icon-color); /* Use variable */
+  transition: color 0.3s ease;
 }
 
 .upload-box p {
   margin: 4px 0; /* Adjust spacing */
-  color: #888; /* Match text color */
+  color: var(--text-color); /* Use variable */
+  opacity: 0.7;
   font-size: 1em;
+  transition: color 0.3s ease;
 }
 
 .upload-hint {
   font-size: 0.9em;
-  color: #888; /* Lighter hint text */
+  color: var(--text-color); /* Use variable */
+  opacity: 0.6;
+  transition: color 0.3s ease;
 }
 
 /* Processing Area Styles */
 .processing-area {
   margin-bottom: 40px;
   padding: 20px;
-  background: #fff;
+  background: var(--processing-area-bg);
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+  box-shadow: 0 2px 8px var(--card-shadow);
   max-width: 800px;
   margin: 20px auto;
-  color: #222;
+  color: var(--text-color);
+  transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .uploaded-menu-image {
@@ -169,31 +306,38 @@ h1 {
 
 /* Progress Bar Styles */
 .progress-container {
-  margin: 20px 0;
-  padding: 15px;
-  background: #f3f3f7;
-  border-radius: 8px;
+  margin: 25px 0;
+  padding: 18px 20px;
+  background: var(--progress-bg);
+  border-radius: 12px;
+  transition: background-color 0.3s ease;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  border: 1px solid rgba(var(--header-bg-rgb, 255, 255, 255), 0.1);
 }
 
 .progress-container p {
   margin: 0 0 10px 0;
   font-weight: bold;
-  color: #555;
+  color: var(--text-color);
+  transition: color 0.3s ease;
 }
 
 .progress-bar-bg {
-  background: #e0e0e0;
-  border-radius: 5px;
-  height: 20px;
+  background: var(--input-border);
+  border-radius: 8px;
+  height: 18px;
   overflow: hidden;
   margin-bottom: 5px;
+  transition: background-color 0.3s ease;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
 }
 
 .progress-bar-fg {
   background: linear-gradient(90deg, #76b852, #8DC26F); /* Green gradient */
   height: 100%;
-  border-radius: 5px;
+  border-radius: 8px;
   transition: width 0.5s ease-in-out;
+  box-shadow: 0 0 8px rgba(118,184,82,0.3);
 }
 
 .progress-container p:last-child { /* Percentage text */
@@ -204,25 +348,58 @@ h1 {
 
 /* Lavender Progress Bar Styles */
 .lavender-bar {
-  background: #f3e8ff !important;
-  border-radius: 8px;
-  margin-top: 24px;
+  background: var(--progress-bg) !important;
+  border-radius: 12px;
+  margin-top: 30px;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
 }
 .lavender-bar .progress-bar-bg {
-  background: #e1bee7 !important;
+  background: rgba(128, 128, 128, 0.15) !important;
+  transition: background-color 0.3s ease;
+  height: 20px;
 }
 .lavender-bar .progress-bar-fg {
   background: linear-gradient(90deg, #b388ff, #ce93d8) !important;
+  box-shadow: 0 0 10px rgba(179, 136, 255, 0.4);
 }
 .status-bar-text {
   text-align: center;
-  color: #7c4dff;
+  color: var(--text-color);
   font-weight: 500;
   font-size: 1.08em;
   margin-top: 8px;
+  transition: color 0.3s ease;
 }
-.global-status-bar {
-  display: none;
+
+.status-bar-text .done-text {
+  font-weight: 600;
+  background: linear-gradient(90deg, #b388ff, #ce93d8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  margin-right: 5px;
+}
+
+.status-bar-text.status {
+  font-weight: 500;
+  font-size: 0.95em;
+  color: var(--text-color);
+  opacity: 0.85;
+  padding: 6px 0;
+  border-top: 1px solid rgba(var(--header-bg-rgb, 255, 255, 255), 0.15);
+  margin-top: 12px;
+}
+
+.status-bar-text.status {
+  font-weight: 500;
+  font-size: 0.95em;
+  color: var(--text-color);
+  opacity: 0.85;
+  padding: 6px 0;
+  border-top: 1px solid rgba(var(--header-bg-rgb, 255, 255, 255), 0.15);
+  margin-top: 12px;
 }
 
 /* Action Buttons Styles */
@@ -240,17 +417,18 @@ button {
   border: none;
   border-radius: 25px; /* Rounded buttons */
   cursor: pointer;
-  transition: background-color 0.2s ease, transform 0.1s ease;
+  transition: background-color 0.2s ease, transform 0.1s ease, color 0.3s ease;
   font-weight: bold;
-  background: #fff;
-  color: #222;
-  border: 1px solid #ddd;
+  background: var(--button-bg);
+  color: var(--button-text);
+  border: 1px solid var(--button-border);
 }
 
 button:disabled {
-  background-color: #ccc;
+  background-color: var(--button-border);
   cursor: not-allowed;
-  color: #666;
+  color: var(--button-text);
+  opacity: 0.5;
 }
 
 /* Specific button styles */
@@ -309,19 +487,21 @@ button:not(:disabled):nth-of-type(2):hover {
 
 /* Error Container Styles */
 .error-container {
-  color: #b71c1c; /* Bootstrap danger color */
+  color: var(--error-text);
   margin: 20px auto;
-  border: 1px solid #f5c6cb; /* Lighter red border */
-  background: #fff0f0; /* Light red background */
+  border: 1px solid var(--error-border);
+  background: var(--error-bg);
   padding: 15px;
   border-radius: 8px;
   max-width: 800px;
   text-align: left;
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
 .error-container strong {
   display: block;
   margin-bottom: 10px;
+  color: var(--error-text);
 }
 
 .error-container ul {
@@ -340,8 +520,8 @@ button:not(:disabled):nth-of-type(2):hover {
 
 .category-title {
   display: inline-block; /* Allows background to fit content */
-  background: #f1f3f5; /* Light gray background */
-  color: #495057; /* Darker gray text */
+  background: var(--category-bg);
+  color: var(--category-text);
   padding: 8px 15px;
   border-radius: 20px; /* Pill shape */
   font-size: 1.1em;
@@ -349,6 +529,7 @@ button:not(:disabled):nth-of-type(2):hover {
   margin-bottom: 25px;
   text-transform: uppercase; /* As seen in image */
   letter-spacing: 1px;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .menu-items-grid {
@@ -358,30 +539,31 @@ button:not(:disabled):nth-of-type(2):hover {
 }
 
 .menu-item-card {
-  background: #fff; /* translucent window effect */
+  background: var(--card-bg); 
   border-radius: 16px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.07);
+  box-shadow: 0 4px 16px var(--card-shadow);
   -webkit-backdrop-filter: none; /* vendor prefix */
   backdrop-filter: none; /* blur background behind card */
   overflow: hidden; /* Ensure image corners are rounded */
   display: flex;
   flex-direction: column;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.3s ease;
 }
 
 .menu-item-card:hover {
   transform: translateY(-5px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  box-shadow: 0 8px 24px var(--card-hover-shadow);
 }
 
 .menu-item-image-container {
   width: 100%;
   height: 220px; /* Fixed height for scaled-down images */
   position: relative;
-  background-color: #f0f0f0;
+  background-color: var(--placeholder-bg);
   overflow: hidden;
   border-top-left-radius: 16px;
   border-top-right-radius: 16px;
+  transition: background-color 0.3s ease;
 }
 
 .menu-item-image {
@@ -408,17 +590,19 @@ button:not(:disabled):nth-of-type(2):hover {
   display: flex;
   justify-content: center;
   align-items: center;
-  color: #bbb;
+  color: var(--placeholder-text);
   font-style: italic;
   font-size: 0.9em;
-  background: #f0f0f0;
+  background: var(--placeholder-bg);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 .image-placeholder.loading {
-  color: #666;
+  color: var(--text-color);
+  opacity: 0.6;
 }
 .image-placeholder.error {
-  color: #d32f2f;
-  background: #ffeaea;
+  color: var(--error-text);
+  background: var(--error-bg);
   font-style: normal;
   font-weight: bold;
   padding: 10px;
@@ -431,20 +615,24 @@ button:not(:disabled):nth-of-type(2):hover {
   padding: 15px;
   text-align: left;
   flex-grow: 1; /* Ensure details section takes remaining space */
+  transition: color 0.3s ease;
 }
 
 .menu-item-name {
   font-size: 1.2em;
   font-weight: bold;
-  color: #222;
+  color: var(--text-color);
   margin-bottom: 8px;
   display: block;
+  transition: color 0.3s ease;
 }
 
 .menu-item-description {
   font-size: 0.95em;
-  color: #444;
+  color: var(--text-color);
+  opacity: 0.8;
   line-height: 1.5;
+  transition: color 0.3s ease;
 }
 
 .menu-item-description i { /* Style for "No description" */
@@ -456,16 +644,17 @@ button:not(:disabled):nth-of-type(2):hover {
   position: fixed;
   z-index: 1000;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.55);
+  background: var(--modal-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
   animation: fadeIn 0.2s;
+  transition: background-color 0.3s ease;
 }
 .modal-content {
-  background: #fff;
+  background: var(--modal-bg);
   border-radius: 18px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  box-shadow: 0 8px 32px var(--modal-shadow);
   max-width: 90vw;
   max-height: 90vh;
   padding: 0;
@@ -474,6 +663,7 @@ button:not(:disabled):nth-of-type(2):hover {
   flex-direction: column;
   align-items: center;
   animation: popIn 0.2s;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
 }
 .modal-close {
   position: absolute;
@@ -482,7 +672,7 @@ button:not(:disabled):nth-of-type(2):hover {
   background: none;
   border: none;
   font-size: 2.2em;
-  color: #888;
+  color: var(--icon-color);
   cursor: pointer;
   z-index: 2;
   transition: color 0.2s;
@@ -497,7 +687,8 @@ button:not(:disabled):nth-of-type(2):hover {
   border-top-right-radius: 18px;
   display: block;
   margin: 0 auto;
-  background: #f0f0f0;
+  background: var(--placeholder-bg);
+  transition: background-color 0.3s ease;
 }
 .modal-desc-area {
   padding: 24px 32px 28px 32px;
@@ -508,11 +699,14 @@ button:not(:disabled):nth-of-type(2):hover {
   font-size: 1.3em;
   font-weight: bold;
   margin-bottom: 10px;
-  color: #222;
+  color: var(--text-color);
+  transition: color 0.3s ease;
 }
 .modal-desc {
   font-size: 1.05em;
-  color: #444;
+  color: var(--text-color);
+  opacity: 0.8;
+  transition: color 0.3s ease;
 }
 @keyframes fadeIn {
   from { opacity: 0; }
@@ -533,14 +727,27 @@ button:not(:disabled):nth-of-type(2):hover {
     margin-bottom: 40px;
   }
   .App-header {
-    padding: 10px 20px; /* Adjusted */
+    padding: 10px 15px; /* Adjusted spacing */
   }
   .logo {
-    font-size: 1.6em; /* Adjusted */
+    font-size: 1.5em; /* Smaller font */
   }
   .header-actions {
     font-size: 1.4em; /* Adjusted */
-    gap: 15px;
+    gap: 12px; /* Reduced gap */
+  }
+  .lavender-bar {
+    padding: 15px;
+  }
+  
+  .lavender-bar .status-bar-text.status {
+    font-size: 0.9em;
+  }
+  .header-status {
+    font-size: 0.8em;
+    padding: 3px 10px;
+    max-width: 40%;
+    margin: 0 10px;
   }
   .menu-items-grid {
     grid-template-columns: 1fr; /* Stack cards on smaller screens */
@@ -571,7 +778,7 @@ button:not(:disabled):nth-of-type(2):hover {
     font-size: 1em;
    }
    .App-main {
-    padding: 20px 15px; /* Adjusted */
+    padding: 65px 15px 20px; /* Adjusted for fixed header */
   }
   .upload-box {
     padding: 20px;
@@ -585,6 +792,23 @@ button:not(:disabled):nth-of-type(2):hover {
   }
   .upload-hint {
     font-size: 0.85em;
+  }
+  .App-header {
+    padding: 8px 12px; /* Further reduced padding */
+  }
+  .logo {
+    font-size: 1.4em; /* Even smaller */
+  }
+  .lavender-bar {
+    padding: 12px;
+  }
+  
+  .lavender-bar .status-bar-text.status {
+    font-size: 0.85em;
+    padding: 5px 0;
+  }
+  .header-actions {
+    gap: 10px;
   }
   /* ... existing responsive styles ... */
 }

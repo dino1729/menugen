@@ -179,6 +179,27 @@ async def process_menu(session_id, image_content):
              await safe_send_json(websocket, {"type": "done"})
              return # Exit if no items
 
+        # Simplify descriptions before generating images
+        logger.info(f"Processing descriptions for {len(items)} items before image generation.")
+        
+        tasks_for_gather = []
+        indices_of_dict_items = []
+        for i, item_to_process in enumerate(items):
+            if isinstance(item_to_process, dict):
+                tasks_for_gather.append(simplify_menu_item_description(item_to_process))
+                indices_of_dict_items.append(i)
+        
+        if tasks_for_gather:
+            processed_descriptions = await asyncio.gather(*tasks_for_gather)
+            for i, original_item_index in enumerate(indices_of_dict_items):
+                items[original_item_index]['description'] = processed_descriptions[i]
+            logger.info("Descriptions processed successfully before image generation.")
+            # Send the updated menu data (with simplified descriptions) again
+            # `parsed_menu` has been updated in place because `items` refers to its contents.
+            await safe_send_json(websocket, {"type": "menu_parsed", "data": parsed_menu})
+        else:
+            logger.info("No dictionary items found to process descriptions for.")
+
         for idx, item in enumerate(items):
             # Ensure item is a dictionary before accessing keys
             if not isinstance(item, dict):

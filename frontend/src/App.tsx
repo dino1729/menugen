@@ -178,8 +178,25 @@ function App() {
       });
       const data = await response.json();
       if (response.ok && data.status === 'success') {
-        const items = data.data || [];
-        setMenuItems(items.map((item: any) => ({ name: item.name, description: item.description, category: item.section || 'Uncategorized' })));
+        // Fix: Handle both dict and list for data.data
+        const rawItems = Array.isArray(data.data) ? data.data : (data.data?.items);
+
+        if (Array.isArray(rawItems)) {
+          const validItems = rawItems
+            .filter((item: any): item is { name: any; description?: any; section?: any } => 
+              item && typeof item === 'object' && typeof item.name === 'string'
+            )
+            .map((item: { name: any; description?: any; section?: any }) => ({
+              name: String(item.name), // Ensure name is a string
+              description: typeof item.description === 'string' ? item.description : '', // Default if not a string
+              category: typeof item.section === 'string' ? item.section : 'Uncategorized', // Default if not a string
+            }));
+          setMenuItems(validItems);
+        } else {
+          // If rawItems is not an array (e.g., null, undefined, or other type), treat as no items
+          setMenuItems([]);
+          console.warn("Parsed data.data.items was not an array:", rawItems);
+        }
         setStatus('Menu parsed successfully.');
         setProgress(100);
       } else {

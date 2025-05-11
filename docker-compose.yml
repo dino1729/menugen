@@ -8,14 +8,14 @@ services:
     volumes:
       - ./backend/data/images:/app/data/images
     ports:
-      - "8000:8000"
+      - "8005:8005"
     restart: unless-stopped
 
   frontend:
     build: ./frontend
     container_name: menugen-frontend
     ports:
-      - "3000:80"
+      - "3005:80"
     depends_on:
       - backend
     restart: unless-stopped

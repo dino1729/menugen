@@ -13,8 +13,16 @@ interface MenuItem {
 // Helper: make sure “Spaghetti ”, “spaghetti”, “SPAGHETTI” all map to a single key
 const normalizeName = (s: string) => s.trim().toLowerCase();
 
+// Define constants for backend communication
+const EFFECTIVE_HOSTNAME = window.location.hostname;
+const BACKEND_PORT = '8005';
+
+const API_ORIGIN = `${window.location.protocol}//${EFFECTIVE_HOSTNAME}:${BACKEND_PORT}`;
+const WS_ORIGIN = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${EFFECTIVE_HOSTNAME}:${BACKEND_PORT}`;
+
 // Convert whatever the backend sends into something the browser can load
-const BACKEND_BASE_URL = 'http://localhost:8000';
+const BACKEND_BASE_URL = API_ORIGIN; // Use the consistent API_ORIGIN for image paths
+
 const buildImageUrl = (raw: string): string => {
   if (raw.startsWith('data:')) return raw; // base-64 already usable
   if (raw.startsWith('http://') || raw.startsWith('https://')) return raw; // already absolute
@@ -22,7 +30,6 @@ const buildImageUrl = (raw: string): string => {
   if (raw.startsWith('/')) return BACKEND_BASE_URL + raw;
   return BACKEND_BASE_URL + '/' + raw;
 };
-
 // Fallback loader: download image yourself and turn it into an object-URL.
 const downloadAsObjectURL = async (remoteUrl: string): Promise<string> => {
   try {
@@ -133,7 +140,7 @@ function App() {
     try {
       setStatus('Uploading menu...');
       setProgress(5); // Initial progress
-      const response = await fetch('http://localhost:8000/upload_menu/', {
+      const response = await fetch(`${API_ORIGIN}/upload_menu/`, {
         method: 'POST',
         body: formData,
       });
@@ -165,7 +172,7 @@ function App() {
     try {
       setStatus('Uploading and Parsing...');
       setProgress(10);
-      const response = await fetch('http://localhost:8000/parse_menu_only/', {
+      const response = await fetch(`${API_ORIGIN}/parse_menu_only/`, {
         method: 'POST',
         body: formData,
       });
@@ -203,14 +210,14 @@ function App() {
 
   const connectWebSocket = (sessionId: string) => {
     if (wsRef.current) wsRef.current.close();
-    const ws = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
+    const ws = new WebSocket(`${WS_ORIGIN}/ws/${sessionId}`);
     wsRef.current = ws;
     setIsGenerating(true);
     ws.onopen = () => {
         setStatus('Connected. Waiting for results...');
         setProgress(20); // Progress update on connect
     }
-    ws.onmessage = (event) => {
+    ws.onmessage = (event: MessageEvent) => {
       const msg = JSON.parse(event.data);
       console.log("WebSocket message received:", msg); // Log all incoming messages
       switch (msg.type) {
@@ -248,22 +255,22 @@ function App() {
             try {
               const blobUrl = await downloadAsObjectURL(origUrl);
               // store blob URL – will definitely load
-              setImages(prev => ({ ...prev, [key]: blobUrl }));
-              setImageLoadStatus(prev => ({ ...prev, [key]: 'loaded' }));
+              setImages((prev: { [key: string]: string }) => ({ ...prev, [key]: blobUrl }));
+              setImageLoadStatus((prev: { [key: string]: 'loading'|'loaded'|'error' }) => ({ ...prev, [key]: 'loaded' }));
             } catch {
-              setImageLoadStatus(prev => ({ ...prev, [key]: 'error' }));
-              setErrors(prev => [...prev, `Could not fetch image for ${rawName}`]);
+              setImageLoadStatus((prev: { [key: string]: 'loading'|'loaded'|'error' }) => ({ ...prev, [key]: 'error' }));
+              setErrors((prev: string[]) => [...prev, `Could not fetch image for ${rawName}`]);
             }
           };
 
           // mark loading
-          setImageLoadStatus(prev => ({ ...prev, [key]: 'loading' }));
+          setImageLoadStatus((prev: { [key: string]: 'loading'|'loaded'|'error' }) => ({ ...prev, [key]: 'loading' }));
 
           const finalUrl = buildImageUrl(msg.url);
           console.log(`[IMG] direct attempt  key=«${key}»  url=`, finalUrl);
 
           // Save the direct URL first
-          setImages(prev => ({ ...prev, [key]: finalUrl }));
+          setImages((prev: { [key: string]: string }) => ({ ...prev, [key]: finalUrl }));
 
           // also try pre-fetching so we know early if the URL is bad
           downloadAsObjectURL(finalUrl)
@@ -277,9 +284,9 @@ function App() {
           break;
         }
         case 'image_error':
-          setMenuItems(prev => prev.map(item => item.name === msg.item ? { ...item, error: msg.message } : item));
-          setErrors((prev) => [...prev, `Image error for ${msg.item}: ${msg.message}`]);
-          setImages((prev) => { // Still count error as "processed" for progress
+          setMenuItems((prev: MenuItem[]) => prev.map((item: MenuItem) => item.name === msg.item ? { ...item, error: msg.message } : item));
+          setErrors((prev: string[]) => [...prev, `Image error for ${msg.item}: ${msg.message}`]);
+          setImages((prev: { [key: string]: string }) => { // Still count error as "processed" for progress
             const newImages = { ...prev, [msg.item]: 'error' }; // Mark as error processed
             const processedCount = Object.keys(newImages).length;
             const imageProgress = totalItems > 0 ? (processedCount / totalItems) * 70 : 0;
@@ -288,7 +295,7 @@ function App() {
           });
           break;
         case 'error':
-          setErrors((prev) => [...prev, `Error: ${msg.message}`]);
+          setErrors((prev: string[]) => [...prev, `Error: ${msg.message}`]);
           setStatus('Error occurred during processing');
           setProgress(0); // Reset progress on critical error
           setIsGenerating(false);
@@ -308,7 +315,7 @@ function App() {
     ws.onerror = (error) => {
         console.error("WebSocket Error:", error);
         setStatus('WebSocket error');
-        setErrors((prev) => [...prev, 'WebSocket connection error.']);
+        setErrors((prev: string[]) => [...prev, 'WebSocket connection error.']);
         setProgress(0);
         setIsGenerating(false);
     };
@@ -335,7 +342,7 @@ function App() {
   }, [imageLoadStatus]);
   
   // Group items by category for rendering
-  const groupedMenuItems = menuItems.reduce((acc, item) => {
+  const groupedMenuItems = menuItems.reduce((acc: { [key: string]: MenuItem[] }, item: MenuItem) => {
     const category = item.category || 'Uncategorized';
     if (!acc[category]) {
       acc[category] = [];
@@ -367,7 +374,7 @@ function App() {
               </svg>
             ) : (
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                <path d="M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5S14.76,7,12,7L12,7z M2,13h2c0.55,0,1-0.45,1-1s-0.45-1-1-1H2 c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13h2c0.55,0,1-0.45,1-1s-0.45-1-1-1h-2c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2 c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1 S11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0 s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06 c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41 c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36 c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"/>
+                <path d="M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5S14.76,7,12,7L12,7z M2,13h2c0.55,0,1-0.45,1-1s-0.45-1-1-1H2 c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13h2c0.55,0,1-0.45,1-1s-0.45-1-1-1h-2c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2 c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1 S11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-1.03,0.39,1.41,0l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0 s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06 c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41 c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36 c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"/>
               </svg>
             )}
           </button>
@@ -468,7 +475,7 @@ function App() {
           <div className="error-container">
             <strong>Errors:</strong>
             <ul>
-              {errors.map((e, i) => <li key={i}>{e}</li>)}
+              {errors.map((e: string, i: number) => <li key={i}>{e}</li>)}
             </ul>
           </div>
         )}
@@ -478,11 +485,11 @@ function App() {
             <div>
               <h2>{isParseOnly ? 'Parsed Menu Items' : 'Menu Items & Generated Images'}</h2>
               {/* Debug section removed */}
-              {Object.entries(groupedMenuItems).map(([category, items]) => (
+              {Object.entries(groupedMenuItems).map(([category, items]: [string, MenuItem[]]) => (
                 <section key={category} className="menu-category">
                   <h3 className="category-title">{category}</h3>
                   <div className="menu-items-grid">
-                    {items.map(item => {
+                    {items.map((item: MenuItem) => {
                       const key = normalizeName(item.name);
                       const imageUrl = images[key];
                       const hasImage = imageUrl && imageUrl !== 'error';
@@ -497,17 +504,10 @@ function App() {
                                 style={{ maxHeight: '220px', objectFit: 'cover', cursor: 'pointer' }}
                                 onClick={() => openImageModal(buildImageUrl(imageUrl), item.description || '', item.name)}
                                 onLoad={() => {
-                                  setImageLoadStatus(prev => ({ ...prev, [key]: 'loaded' }));
+                                  setImageLoadStatus((prev: { [key: string]: 'loading'|'loaded'|'error' }) => ({ ...prev, [key]: 'loaded' }));
                                 }}
-                                onError={(e) => {
-                                  const direct = buildImageUrl(images[key]);
-                                  downloadAsObjectURL(direct)
-                                    .then(blobUrl => {
-                                      setImages(prev => ({ ...prev, [key]: blobUrl }));
-                                    })
-                                    .catch(() => {
-                                      setImageLoadStatus(prev => ({ ...prev, [key]: 'error' }));
-                                    });
+                                onError={() => {
+                                  setImageLoadStatus((prev: { [key: string]: 'loading'|'loaded'|'error' }) => ({ ...prev, [key]: 'error' }));
                                 }}
                               />
                             </div>

@@ -31,7 +31,7 @@ stop_funny_messages = threading.Event()
 def print_funny_messages():
     while not stop_funny_messages.is_set():
         chat_response = client.chat.completions.create(
-            model="gpt-4o",
+            model="model-router",
             messages=[
                 {"role": "system", "content": "You are Rick Sanchez that makes funny comments about image prompts aand I'm Morty"},
                 {"role": "user", "content": f"Make a funny comment about this image prompt: '{prompt}'"}

@@ -27,8 +27,8 @@ class ImageGenerationError(Exception):
     pass
 
 # Read model names from environment variables with defaults
-VISION_MODEL = os.getenv("VISION_MODEL", "gpt-4o")
-DESCRIPTION_MODEL = os.getenv("DESCRIPTION_MODEL", "gpt-4o-mini")
+VISION_MODEL = os.getenv("VISION_MODEL", "model-router")
+DESCRIPTION_MODEL = os.getenv("DESCRIPTION_MODEL", "model-router")
 IMAGE_GEN_MODEL = os.getenv("IMAGE_GEN_MODEL", "dall-e-3")
 
 # Define the path for saving images
@@ -86,7 +86,7 @@ async def parse_menu_image(image_content: bytes) -> Dict:
         )
         logger.info("Encoding image content to base64.")
         base64_image = base64.b64encode(image_content).decode('utf-8')
-        logger.info("Calling OpenAI GPT-4o vision API for menu parsing.")
+        logger.info("Calling model-router API for menu parsing.")
         # Use await with the async client
         response = await client.chat.completions.create(
             model=VISION_MODEL, # Use environment variable

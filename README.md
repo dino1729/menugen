@@ -24,11 +24,11 @@ From the project root, run:
 ```
 docker compose up --build
 ```
-- The backend will be available at [http://localhost:8000](http://localhost:8005)
-- The frontend will be available at [http://localhost:3000](http://localhost:3005)
+- The backend will be available at [http://localhost:8005](http://localhost:8005)
+- The frontend will be available at [http://localhost:3005](http://localhost:3005)
 
 ### 4. Usage
-- Open the frontend in your browser: [http://localhost:3000](http://localhost:3005)
+- Open the frontend in your browser: [http://localhost:3005](http://localhost:3005)
 - Upload a menu image and watch as the app parses and generates images in real time.
 
 ### 5. Stopping

@@ -9,9 +9,39 @@ import logging
 from fastapi import FastAPI, UploadFile, WebSocket, WebSocketDisconnect, BackgroundTasks, Request
 from fastapi.responses import JSONResponse, StreamingResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
-# Import the custom exception
-from openai_client import parse_menu_image, generate_menu_item_image, simplify_menu_item_description, ImageGenerationError
+# Import the custom exception and utilities
+from client_utils import ImageGenerationError, clear_images_folder as clear_images_util
 from image_utils import encode_image_to_base64
+
+# Import provider-specific implementations
+from nvidia_image_parser import parse_menu_image_nvidia
+from openai_image_parser import parse_menu_image_openai
+from nvidia_description import simplify_menu_item_description_nvidia
+from openai_description import simplify_menu_item_description_openai
+from nvidia_image_generation import generate_menu_item_image_nvidia
+from openai_image_generation import generate_menu_item_image_openai
+
+# Wrapper functions to route to appropriate provider
+async def parse_menu_image(image_content: bytes, model_provider: str = "nvidia"):
+    """Route menu image parsing to appropriate provider."""
+    if model_provider == "nvidia":
+        return await parse_menu_image_nvidia(image_content)
+    else:
+        return await parse_menu_image_openai(image_content)
+
+async def simplify_menu_item_description(item, model_provider: str = "nvidia"):
+    """Route description simplification to appropriate provider."""
+    if model_provider == "nvidia":
+        return await simplify_menu_item_description_nvidia(item)
+    else:
+        return await simplify_menu_item_description_openai(item)
+
+async def generate_menu_item_image(item, model_provider: str = "nvidia"):
+    """Route image generation to appropriate provider."""
+    if model_provider == "nvidia":
+        return await generate_menu_item_image_nvidia(item)
+    else:
+        return await generate_menu_item_image_openai(item)
 import asyncio
 import uuid
 from fastapi.staticfiles import StaticFiles
@@ -50,22 +80,34 @@ def read_root():
     return {"message": "Welcome to the Menu Parser & Illustrator API!"}
 
 @app.post("/upload_menu/")
-async def upload_menu(file: UploadFile):
+async def upload_menu(file: UploadFile, request: Request):
     logger.info(f"Received file upload: filename={file.filename}, content_type={file.content_type}")
     content = await file.read()
+    
+    # Try to get model_provider from form data
+    form_data = await request.form()
+    model_provider = form_data.get("model_provider", "nvidia")
+    logger.info(f"Model provider selected: {model_provider}")
+    
     session_id = str(uuid.uuid4())
     logger.info(f"Generated session_id={session_id} for upload.")
-    asyncio.create_task(process_menu(session_id, content))
+    asyncio.create_task(process_menu(session_id, content, model_provider))
     logger.info(f"Started background task for session_id={session_id}.")
     return JSONResponse(content={"status": "processing", "sessionId": session_id})
 
 @app.post("/parse_menu_only/")
-async def parse_menu_only(file: UploadFile):
+async def parse_menu_only(file: UploadFile, request: Request):
     logger.info(f"Received file for parsing only: filename={file.filename}, content_type={file.content_type}")
     content = await file.read()
+    
+    # Try to get model_provider from form data
+    form_data = await request.form()
+    model_provider = form_data.get("model_provider", "nvidia")
+    logger.info(f"Model provider selected for parsing: {model_provider}")
+    
     try:
         logger.info("Calling parse_menu_image for parsing only.")
-        parsed_data = await parse_menu_image(content)
+        parsed_data = await parse_menu_image(content, model_provider)
         logger.info(f"Menu parsed successfully (parsing only): {parsed_data}")
 
         # Determine the list of items
@@ -82,7 +124,7 @@ async def parse_menu_only(file: UploadFile):
         # Simplify or generate descriptions for all items
         if items:
             logger.info(f"Processing descriptions for {len(items)} items.")
-            simplification_tasks = [simplify_menu_item_description(item) for item in items]
+            simplification_tasks = [simplify_menu_item_description(item, model_provider) for item in items]
             
             # Run simplification/generation tasks concurrently
             processed_descriptions = await asyncio.gather(*simplification_tasks)
@@ -123,20 +165,13 @@ def safe_send_json(websocket, data):
     except Exception as e:
         logger.error(f"Send error: {e}")
 
-def clear_images_folder():
-    images_dir = os.path.join(os.path.dirname(__file__), "data", "images")
-    for f in glob.glob(os.path.join(images_dir, "*")):
-        try:
-            os.remove(f)
-            logger.info(f"Deleted old image: {f}")
-        except Exception as e:
-            logger.error(f"Failed to delete {f}: {e}")
+# Using clear_images_util from client_utils (imported above as clear_images_util)
 
-async def process_menu(session_id, image_content):
-    logger.info(f"Begin processing menu for session_id={session_id}.")
+async def process_menu(session_id, image_content, model_provider="nvidia"):
+    logger.info(f"Begin processing menu for session_id={session_id} with model_provider={model_provider}.")
 
     # Clear images folder before generating new images
-    clear_images_folder()
+    clear_images_util()
 
     # Wait for WebSocket connection to be established
     websocket = None
@@ -155,9 +190,10 @@ async def process_menu(session_id, image_content):
 
     try:
         # Step 1: Parse menu
-        await safe_send_json(websocket, {"type": "status", "message": "Parsing menu..."})
-        logger.info(f"Calling parse_menu_image for session_id={session_id}.")
-        parsed_menu = await parse_menu_image(image_content)
+        model_display = "NVIDIA" if model_provider == "nvidia" else "OpenAI"
+        await safe_send_json(websocket, {"type": "status", "message": f"Parsing menu with {model_display}..."})
+        logger.info(f"Calling parse_menu_image for session_id={session_id} with provider={model_provider}.")
+        parsed_menu = await parse_menu_image(image_content, model_provider)
         logger.info(f"Menu parsed for session_id={session_id}: {parsed_menu}")
         await safe_send_json(websocket, {"type": "menu_parsed", "data": parsed_menu})
 
@@ -180,13 +216,13 @@ async def process_menu(session_id, image_content):
              return # Exit if no items
 
         # Simplify descriptions before generating images
-        logger.info(f"Processing descriptions for {len(items)} items before image generation.")
+        logger.info(f"Processing descriptions for {len(items)} items before image generation with {model_provider}.")
         
         tasks_for_gather = []
         indices_of_dict_items = []
         for i, item_to_process in enumerate(items):
             if isinstance(item_to_process, dict):
-                tasks_for_gather.append(simplify_menu_item_description(item_to_process))
+                tasks_for_gather.append(simplify_menu_item_description(item_to_process, model_provider))
                 indices_of_dict_items.append(i)
         
         if tasks_for_gather:
@@ -206,11 +242,12 @@ async def process_menu(session_id, image_content):
                 logger.warning(f"Skipping item at index {idx} because it's not a dictionary: {item}")
                 continue
             item_name = item.get('name', f'Unknown Item {idx+1}') # Use get with default
-            logger.info(f"Generating image for item {item_name} (session_id={session_id}, idx={idx}).")
-            await safe_send_json(websocket, {"type": "status", "message": f"Generating image for {item_name} ({idx+1}/{len(items)})..."})
+            logger.info(f"Generating image for item {item_name} (session_id={session_id}, idx={idx}) using {model_provider}.")
+            model_display = "NVIDIA Stable Diffusion 3" if model_provider == "nvidia" else "OpenAI DALL-E 3"
+            await safe_send_json(websocket, {"type": "status", "message": f"Generating image for {item_name} ({idx+1}/{len(items)}) with {model_display}..."})
             try:
                 # generate_menu_item_image now returns the local filename
-                local_filename = await generate_menu_item_image(item)
+                local_filename = await generate_menu_item_image(item, model_provider)
                 logger.info(f"Image generated and saved locally as {local_filename} for item {item_name} (session_id={session_id}).")
 
                 # Construct the relative URL for the static file server

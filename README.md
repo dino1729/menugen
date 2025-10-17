@@ -1,23 +1,54 @@
 # MenuGen: Menu Parser & AI Image Generator
 
-This project consists of a FastAPI backend (Python) and a React frontend. The backend parses menu images and generates dish illustrations using OpenAI APIs. The frontend provides a modern UI for uploading menus and viewing results in real time.
+This project consists of a FastAPI backend (Python) and a React frontend. The backend parses menu images and generates dish illustrations using AI models (NVIDIA Stable Diffusion 3 or OpenAI DALL-E 3). The frontend provides a modern UI for uploading menus and viewing results in real time.
 
 ## Quick Start: Docker Compose
 
 ### 1. Prerequisites
 - [Docker](https://www.docker.com/get-started) and [Docker Compose](https://docs.docker.com/compose/) installed
-- An OpenAI API key (for backend)
+- An NVIDIA API key (for image generation) or OpenAI API key (alternative)
 
 ### 2. Setup Environment Variables
 Create a `.env` file in the `backend/` directory with at least:
 ```
+# Required: API Keys
+NVIDIA_API_KEY=nvapi-...
 OPENAI_API_KEY=sk-...
-# Optionally:
-# OPENAI_API_BASE=your_custom_base_url
+
+# Required: NVIDIA API Base URLs (must be explicitly set - no defaults)
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+NVIDIA_IMAGE_GEN_URL=https://ai.api.nvidia.com/v1/genai/stabilityai/stable-diffusion-3-medium
+
+# Optional: OpenAI API Base URL
+# OPENAI_API_BASE=https://api.openai.com/v1
+
+# Optional: OpenAI Model Configuration
 # VISION_MODEL=gpt-4o
-# IMAGE_GEN_MODEL=gpt-image-1
+# IMAGE_GEN_MODEL=dall-e-3
 # DESCRIPTION_MODEL=gpt-4o-mini
+
+# Optional: NVIDIA Model Configuration
+# NVIDIA_VISION_MODEL=microsoft/phi-4-multimodal-instruct
+# NVIDIA_TEXT_MODEL=openai/gpt-oss-20b
+
+# Optional: Logging
+# LOG_LEVEL=INFO
 ```
+
+**Security Note:** NVIDIA API base URLs are now **required** environment variables with no hardcoded defaults. This enforces:
+- Explicit configuration of API endpoints
+- No outdated or insecure hardcoded URLs in source code
+- Easy updates when NVIDIA changes their endpoints
+- Environment-specific configurations (dev/staging/prod)
+
+See `backend/ENV_CONFIGURATION.md` for detailed documentation of all environment variables.
+
+**Note:** The app defaults to NVIDIA models for all AI operations:
+- **Vision (menu parsing)**: Microsoft Phi-4 Multimodal Instruct
+- **Text (descriptions)**: OpenAI GPT-OSS-20B
+- **Image generation**: Stable Diffusion 3
+
+You can switch to OpenAI models (GPT-4 Vision, GPT-4, DALL-E 3) using the model selector in the web interface.
 
 ### 3. Build and Run
 From the project root, run:

@@ -1,14 +1,28 @@
-# Python cache
-__pycache__/
-*.pyc
-
 # Environment variables
 .env
-.DS_Store
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
 venv/
+env/
+ENV/
 
-# Data directory (for saved images)
-data/
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# Log files
-*.log
+# OS
+.DS_Store
+Thumbs.db
+
+ENV_CONFIGURATION.md
+SECURITY_UPDATE_SUMMARY.md
+NVIDIA_INTEGRATION_SUMMARY.md

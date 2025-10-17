@@ -63,6 +63,22 @@ function App() {
     localStorage.setItem('menugen-theme', newTheme);
   };
 
+  // Model provider state - default to 'nvidia'
+  const [selectedModel, setSelectedModel] = useState<'nvidia' | 'openai'>(() => {
+    // Check local storage for saved model preference
+    const savedModel = localStorage.getItem('menugen-model-preference');
+    // Return saved model or default to 'nvidia'
+    return (savedModel === 'openai' ? 'openai' : 'nvidia') as 'nvidia' | 'openai';
+  });
+
+  // Model toggle function
+  const toggleModel = () => {
+    const newModel = selectedModel === 'nvidia' ? 'openai' : 'nvidia';
+    setSelectedModel(newModel);
+    // Save to local storage
+    localStorage.setItem('menugen-model-preference', newModel);
+  };
+
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<string>('');
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -137,8 +153,10 @@ function App() {
     setProgress(2); // Show a little progress right away
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('model_provider', selectedModel); // Add model provider to form data
     try {
-      setStatus('Uploading menu...');
+      const modelName = selectedModel === 'nvidia' ? 'NVIDIA Stable Diffusion 3' : 'OpenAI DALL-E 3';
+      setStatus(`Uploading menu (using ${modelName})...`);
       setProgress(5); // Initial progress
       const response = await fetch(`${API_ORIGIN}/upload_menu/`, {
         method: 'POST',
@@ -169,8 +187,10 @@ function App() {
     setProgress(2);
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('model_provider', selectedModel); // Add model provider for parsing too
     try {
-      setStatus('Uploading and Parsing...');
+      const modelName = selectedModel === 'nvidia' ? 'NVIDIA' : 'OpenAI';
+      setStatus(`Uploading and Parsing with ${modelName}...`);
       setProgress(10);
       const response = await fetch(`${API_ORIGIN}/parse_menu_only/`, {
         method: 'POST',
@@ -379,6 +399,17 @@ function App() {
         <div className="logo">MenuGen</div>
         
         <div className="header-actions">
+          <button 
+            onClick={toggleModel}
+            className="model-toggle"
+            title={selectedModel === 'nvidia' ? 'Using NVIDIA SD3 (click to switch to OpenAI)' : 'Using OpenAI DALL-E 3 (click to switch to NVIDIA)'}
+            aria-label={`Current model: ${selectedModel === 'nvidia' ? 'NVIDIA Stable Diffusion 3' : 'OpenAI DALL-E 3'}`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M21,16.5C21,16.88 20.79,17.21 20.47,17.38L12.57,21.82C12.41,21.94 12.21,22 12,22C11.79,22 11.59,21.94 11.43,21.82L3.53,17.38C3.21,17.21 3,16.88 3,16.5V7.5C3,7.12 3.21,6.79 3.53,6.62L11.43,2.18C11.59,2.06 11.79,2 12,2C12.21,2 12.41,2.06 12.57,2.18L20.47,6.62C20.79,6.79 21,7.12 21,7.5V16.5M12,4.15L6.04,7.5L12,10.85L17.96,7.5L12,4.15M5,15.91L11,19.29V12.58L5,9.21V15.91M19,15.91V9.21L13,12.58V19.29L19,15.91Z"/>
+            </svg>
+            <span className="model-label">{selectedModel === 'nvidia' ? 'NVIDIA' : 'OpenAI'}</span>
+          </button>
           <button 
             onClick={toggleTheme}
             className="theme-toggle"

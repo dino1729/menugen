@@ -151,6 +151,47 @@ code {
   color: var(--icon-color);
 }
 
+/* Model Toggle Button */
+.model-toggle {
+  background: transparent;
+  border: 1px solid var(--button-border);
+  cursor: pointer;
+  padding: 6px 12px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  color: var(--icon-color);
+  line-height: 1;
+  border-radius: 20px;
+  font-size: 0.75em;
+  font-weight: 600;
+}
+
+.model-toggle:hover {
+  transform: scale(1.05);
+  background: var(--button-bg);
+  border-color: var(--text-color);
+  opacity: 0.9;
+}
+
+.model-toggle svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  stroke: none;
+  display: block;
+  opacity: 0.85;
+}
+
+.model-label {
+  font-size: 0.95em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 /* Theme Toggle Button */
 .theme-toggle {
   background: transparent;

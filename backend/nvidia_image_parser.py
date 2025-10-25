@@ -18,7 +18,7 @@ nvidia_client = AsyncOpenAI(
 )
 
 # Read NVIDIA vision model from environment variable
-NVIDIA_VISION_MODEL = os.getenv("NVIDIA_VISION_MODEL", "microsoft/phi-4-multimodal-instruct")
+NVIDIA_VISION_MODEL = os.getenv("NVIDIA_VISION_MODEL")
 
 async def parse_menu_image_nvidia(image_content: bytes) -> Dict:
     """Parse menu image using NVIDIA vision model.

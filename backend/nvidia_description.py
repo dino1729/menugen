@@ -18,7 +18,7 @@ nvidia_client = AsyncOpenAI(
 )
 
 # Read NVIDIA text model from environment variable
-NVIDIA_TEXT_MODEL = os.getenv("NVIDIA_TEXT_MODEL", "openai/gpt-oss-20b")
+NVIDIA_TEXT_MODEL = os.getenv("NVIDIA_TEXT_MODEL")
 
 async def simplify_menu_item_description_nvidia(item: Dict) -> str:
     """Takes a menu item dictionary and returns a simplified description using NVIDIA AI.

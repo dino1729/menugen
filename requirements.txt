@@ -8,3 +8,10 @@ websockets
 aiohttp
 aiofiles
 httpx
+litellm
+
+# Testing
+pytest
+pytest-asyncio
+pytest-timeout
+

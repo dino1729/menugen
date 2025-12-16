@@ -1,10 +1,13 @@
 version: '3.8'
 services:
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend
     container_name: menugen-backend
     env_file:
-      - ./backend/.env
+      - ./.env
     volumes:
       - ./backend/data/images:/app/data/images
     ports:
@@ -12,7 +15,10 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend
     container_name: menugen-frontend
     ports:
       - "3005:80"

@@ -866,3 +866,112 @@ button:not(:disabled):nth-of-type(2):hover {
     transform: rotate(360deg);
   }
 }
+
+/* Settings Modal Styles */
+.settings-modal {
+  background: var(--modal-bg);
+  color: var(--modal-text);
+  border-radius: 16px;
+  max-width: 600px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 50px var(--modal-shadow);
+  position: relative;
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 32px;
+  border-bottom: 1px solid var(--input-border);
+}
+
+.settings-header h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.settings-body {
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setting-group label {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-color);
+}
+
+.setting-select {
+  padding: 12px 16px;
+  border: 2px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text-color);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.setting-select:hover {
+  border-color: #9b59b6;
+}
+
+.setting-select:focus {
+  outline: none;
+  border-color: #9b59b6;
+  box-shadow: 0 0 0 3px rgba(155, 89, 182, 0.1);
+}
+
+.setting-hint {
+  font-size: 12px;
+  color: var(--icon-color);
+  font-style: italic;
+}
+
+.settings-footer {
+  padding: 16px 32px 24px;
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--input-border);
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--button-bg);
+  border: 1px solid var(--button-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.settings-toggle:hover {
+  background: #9b59b6;
+  border-color: #9b59b6;
+  color: #fff;
+}
+
+.settings-toggle svg {
+  width: 20px;
+  height: 20px;
+}
+
+.settings-toggle .model-label {
+  font-size: 13px;
+  font-weight: 600;
+}

@@ -9,50 +9,36 @@ This project consists of a FastAPI backend (Python) and a React frontend. The ba
 - An NVIDIA API key (for image generation) or OpenAI API key (alternative)
 
 ### 2. Setup Environment Variables
-Create a `.env` file in the `backend/` directory with at least:
+Create a `.env` file in the **project root** by copying from `example.env`:
+```bash
+cp example.env .env
 ```
-# Required: API Keys
-NVIDIA_API_KEY=nvapi-...
-OPENAI_API_KEY=sk-...
 
-# Required: NVIDIA API Base URLs (must be explicitly set - no defaults)
-NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+Then edit `.env` with your configuration:
+```
+# LiteLLM Configuration (Primary)
+LITELLM_BASE_URL=http://localhost:4000
+LITELLM_API_KEY=your_litellm_api_key_here
+
+# Model Configuration
+LLM_MODEL=gpt-4o
+IMAGE_GEN_MODEL=gemini-3-pro-image-preview
+
+# Image Provider Selection
+# Options: "litellm" (uses IMAGE_GEN_MODEL via LiteLLM/Proxy) or "nvidia" (uses NVIDIA_IMAGE_GEN_URL)
+IMAGE_PROVIDER=litellm
+
+# NVIDIA Configuration (Backup)
+NVIDIA_API_KEY=your_nvidia_api_key_here
 NVIDIA_IMAGE_GEN_URL=https://ai.api.nvidia.com/v1/genai/stabilityai/stable-diffusion-3-medium
 
-# Optional: OpenAI API Base URL
-# OPENAI_API_BASE=https://api.openai.com/v1
-
-# Optional: OpenAI Model Configuration
-# VISION_MODEL=gpt-4o
-# IMAGE_GEN_MODEL=dall-e-3
-# DESCRIPTION_MODEL=gpt-4o-mini
-
-# Optional: NVIDIA Model Configuration
-# NVIDIA_VISION_MODEL=microsoft/phi-4-multimodal-instruct
-# NVIDIA_TEXT_MODEL=openai/gpt-oss-20b
-
-# Optional: Logging
-# LOG_LEVEL=INFO
+# Server Configuration
+LOG_LEVEL=INFO
 ```
-
-**Security Note:** NVIDIA API base URLs are now **required** environment variables with no hardcoded defaults. This enforces:
-- Explicit configuration of API endpoints
-- No outdated or insecure hardcoded URLs in source code
-- Easy updates when NVIDIA changes their endpoints
-- Environment-specific configurations (dev/staging/prod)
-
-See `backend/ENV_CONFIGURATION.md` for detailed documentation of all environment variables.
-
-**Note:** The app defaults to NVIDIA models for all AI operations:
-- **Vision (menu parsing)**: Microsoft Phi-4 Multimodal Instruct
-- **Text (descriptions)**: OpenAI GPT-OSS-20B
-- **Image generation**: Stable Diffusion 3
-
-You can switch to OpenAI models (GPT-4 Vision, GPT-4, DALL-E 3) using the model selector in the web interface.
 
 ### 3. Build and Run
 From the project root, run:
-```
+```bash
 docker compose up --build
 ```
 - The backend will be available at [http://localhost:8005](http://localhost:8005)
@@ -64,19 +50,54 @@ docker compose up --build
 
 ### 5. Stopping
 Press `Ctrl+C` in the terminal, or run:
+```bash
+docker compose down
 ```
-docker-compose down
+
+## Local Development (without Docker)
+
+Use the provided helper scripts to run locally:
+
+```bash
+# Start both backend and frontend
+./start_menugen.sh
+
+# Check status
+./status_menugen.sh
+
+# Stop all services
+./stop_menugen.sh
+```
+
+The scripts will:
+- Create a Python virtual environment (`.venv/`) if needed and install dependencies from `requirements.txt`
+- Copy `example.env` to `.env` if not present
+- Start the FastAPI backend on port 8005
+- Install npm dependencies and start the React frontend on port 3000
+
+## Project Structure
+
+```
+menugen/
+├── backend/           # FastAPI Python backend (code only)
+├── frontend/          # React TypeScript frontend (code only)
+├── Dockerfile         # Multi-target Dockerfile (backend + frontend targets)
+├── docker-compose.yml # Container orchestration
+├── requirements.txt   # Python dependencies
+├── example.env        # Environment template
+├── start_menugen.sh   # Local dev start script
+├── stop_menugen.sh    # Local dev stop script
+└── status_menugen.sh  # Local dev status script
 ```
 
 ## Development Notes
 - The backend serves generated images at `/images/` (mounted as a volume for persistence).
-- For local development, you can run backend and frontend separately using `uvicorn` and `npm start`.
-- Update dependencies in `backend/requirements.txt` and `frontend/package.json` as needed.
+- Update Python dependencies in `requirements.txt` and frontend dependencies in `frontend/package.json`.
 
 ## Troubleshooting
-- Ensure your OpenAI API key is valid and has access to the required models.
-- If you change code, re-run `docker-compose up --build` to rebuild images.
-- For logs, check the container output or use `docker-compose logs backend` / `docker-compose logs frontend`.
+- Ensure your API keys are valid and have access to the required models.
+- If you change code, re-run `docker compose up --build` to rebuild images.
+- For logs, check the container output or use `docker compose logs backend` / `docker compose logs frontend`.
 
 ---
 

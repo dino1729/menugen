@@ -17,6 +17,15 @@ const normalizeName = (s: string) => s.trim().toLowerCase();
 const EFFECTIVE_HOSTNAME = window.location.hostname;
 const BACKEND_PORT = '8005';
 
+// NVIDIA-specific image generation models
+const NVIDIA_IMAGE_MODELS = [
+  { value: 'stabilityai/stable-diffusion-3.5-large', label: 'Stable Diffusion 3.5 Large' },
+  { value: 'black-forest-labs/flux.1-kontext-dev', label: 'FLUX.1 Kontext Dev' },
+  { value: 'black-forest-labs/flux.1-schnell', label: 'FLUX.1 Schnell' },
+  { value: 'black-forest-labs/flux.1-dev', label: 'FLUX.1 Dev' },
+  { value: 'stabilityai/stable-diffusion-3-medium', label: 'Stable Diffusion 3 Medium' },
+];
+
 const API_ORIGIN = `${window.location.protocol}//${EFFECTIVE_HOSTNAME}:${BACKEND_PORT}`;
 const WS_ORIGIN = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${EFFECTIVE_HOSTNAME}:${BACKEND_PORT}`;
 
@@ -63,21 +72,81 @@ function App() {
     localStorage.setItem('menugen-theme', newTheme);
   };
 
-  // Model provider state - default to 'nvidia'
-  const [selectedModel, setSelectedModel] = useState<'nvidia' | 'openai'>(() => {
-    // Check local storage for saved model preference
-    const savedModel = localStorage.getItem('menugen-model-preference');
-    // Return saved model or default to 'nvidia'
-    return (savedModel === 'openai' ? 'openai' : 'nvidia') as 'nvidia' | 'openai';
+  // Configuration and model selection state
+  const [showSettings, setShowSettings] = useState(false);
+  const [imageProvider, setImageProvider] = useState<string>('litellm');
+  const [visionModel, setVisionModel] = useState<string>('gpt-4o');
+  const [imageGenModel, setImageGenModel] = useState<string>('gemini-3-pro-image-preview');
+  const [videoGenModel, setVideoGenModel] = useState<string>('veo-3.0-generate-001');
+  const [llmModel, setLlmModel] = useState<string>('gpt-4o');
+  
+  // Available models from backend
+  const [availableModels, setAvailableModels] = useState<{
+    all: string[];
+    vision: string[];
+    image: string[];
+    video: string[];
+    text: string[];
+  }>({
+    all: [],
+    vision: [],
+    image: [],
+    video: [],
+    text: []
   });
 
-  // Model toggle function
-  const toggleModel = () => {
-    const newModel = selectedModel === 'nvidia' ? 'openai' : 'nvidia';
-    setSelectedModel(newModel);
-    // Save to local storage
-    localStorage.setItem('menugen-model-preference', newModel);
-  };
+  // Fetch configuration and available models on mount
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const response = await fetch(`${API_ORIGIN}/config`);
+        if (response.ok) {
+          const config = await response.json();
+          setImageProvider(config.image_provider || 'litellm');
+          setVisionModel(config.vision_model || 'gpt-4o');
+          setImageGenModel(config.image_gen_model || 'gemini-3-pro-image-preview');
+          setVideoGenModel(config.video_gen_model || 'veo-3.0-generate-001');
+          setLlmModel(config.llm_model || 'gpt-4o');
+        }
+      } catch (error) {
+        console.error('Failed to fetch config:', error);
+      }
+    };
+
+    const fetchModels = async () => {
+      try {
+        const response = await fetch(`${API_ORIGIN}/models`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.models) {
+            setAvailableModels(data.models);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch models:', error);
+      }
+    };
+
+    fetchConfig();
+    fetchModels();
+  }, []);
+
+  // Update image generation model when provider changes
+  useEffect(() => {
+    if (imageProvider === 'nvidia') {
+      // Set to first NVIDIA model if current model is not a NVIDIA model
+      const isCurrentModelNvidia = NVIDIA_IMAGE_MODELS.some(m => m.value === imageGenModel);
+      if (!isCurrentModelNvidia) {
+        setImageGenModel(NVIDIA_IMAGE_MODELS[0].value);
+      }
+    } else if (imageProvider === 'litellm' && availableModels.image.length > 0) {
+      // Set to first available LiteLLM image model if current is an NVIDIA model
+      const isCurrentModelNvidia = NVIDIA_IMAGE_MODELS.some(m => m.value === imageGenModel);
+      if (isCurrentModelNvidia) {
+        setImageGenModel(availableModels.image[0]);
+      }
+    }
+  }, [imageProvider, availableModels.image]);
 
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<string>('');
@@ -153,10 +222,13 @@ function App() {
     setProgress(2); // Show a little progress right away
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('model_provider', selectedModel); // Add model provider to form data
+    formData.append('image_provider', imageProvider);
+    formData.append('vision_model', visionModel);
+    formData.append('image_gen_model', imageGenModel);
+    formData.append('video_gen_model', videoGenModel);
+    formData.append('llm_model', llmModel);
     try {
-      const modelName = selectedModel === 'nvidia' ? 'NVIDIA Stable Diffusion 3' : 'OpenAI DALL-E 3';
-      setStatus(`Uploading menu (using ${modelName})...`);
+      setStatus(`Uploading menu (using ${imageProvider.toUpperCase()} with ${imageGenModel})...`);
       setProgress(5); // Initial progress
       const response = await fetch(`${API_ORIGIN}/upload_menu/`, {
         method: 'POST',
@@ -187,10 +259,10 @@ function App() {
     setProgress(2);
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('model_provider', selectedModel); // Add model provider for parsing too
+    formData.append('vision_model', visionModel);
+    formData.append('llm_model', llmModel);
     try {
-      const modelName = selectedModel === 'nvidia' ? 'NVIDIA' : 'OpenAI';
-      setStatus(`Uploading and Parsing with ${modelName}...`);
+      setStatus(`Uploading and Parsing with ${visionModel}...`);
       setProgress(10);
       const response = await fetch(`${API_ORIGIN}/parse_menu_only/`, {
         method: 'POST',
@@ -400,15 +472,15 @@ function App() {
         
         <div className="header-actions">
           <button 
-            onClick={toggleModel}
-            className="model-toggle"
-            title={selectedModel === 'nvidia' ? 'Using NVIDIA SD3 (click to switch to OpenAI)' : 'Using OpenAI DALL-E 3 (click to switch to NVIDIA)'}
-            aria-label={`Current model: ${selectedModel === 'nvidia' ? 'NVIDIA Stable Diffusion 3' : 'OpenAI DALL-E 3'}`}
+            onClick={() => setShowSettings(true)}
+            className="settings-toggle"
+            title="Configure Models & Providers"
+            aria-label="Open settings to configure models and providers"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M21,16.5C21,16.88 20.79,17.21 20.47,17.38L12.57,21.82C12.41,21.94 12.21,22 12,22C11.79,22 11.59,21.94 11.43,21.82L3.53,17.38C3.21,17.21 3,16.88 3,16.5V7.5C3,7.12 3.21,6.79 3.53,6.62L11.43,2.18C11.59,2.06 11.79,2 12,2C12.21,2 12.41,2.06 12.57,2.18L20.47,6.62C20.79,6.79 21,7.12 21,7.5V16.5M12,4.15L6.04,7.5L12,10.85L17.96,7.5L12,4.15M5,15.91L11,19.29V12.58L5,9.21V15.91M19,15.91V9.21L13,12.58V19.29L19,15.91Z"/>
+              <path d="M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8M12,10A2,2 0 0,0 10,12A2,2 0 0,0 12,14A2,2 0 0,0 14,12A2,2 0 0,0 12,10M10,22C9.75,22 9.54,21.82 9.5,21.58L9.13,18.93C8.5,18.68 7.96,18.34 7.44,17.94L4.95,18.95C4.73,19.03 4.46,18.95 4.34,18.73L2.34,15.27C2.21,15.05 2.27,14.78 2.46,14.63L4.57,12.97L4.5,12L4.57,11L2.46,9.37C2.27,9.22 2.21,8.95 2.34,8.73L4.34,5.27C4.46,5.05 4.73,4.96 4.95,5.05L7.44,6.05C7.96,5.66 8.5,5.32 9.13,5.07L9.5,2.42C9.54,2.18 9.75,2 10,2H14C14.25,2 14.46,2.18 14.5,2.42L14.87,5.07C15.5,5.32 16.04,5.66 16.56,6.05L19.05,5.05C19.27,4.96 19.54,5.05 19.66,5.27L21.66,8.73C21.79,8.95 21.73,9.22 21.54,9.37L19.43,11L19.5,12L19.43,13L21.54,14.63C21.73,14.78 21.79,15.05 21.66,15.27L19.66,18.73C19.54,18.95 19.27,19.04 19.05,18.95L16.56,17.95C16.04,18.34 15.5,18.68 14.87,18.93L14.5,21.58C14.46,21.82 14.25,22 14,22H10M11.25,4L10.88,6.61C9.68,6.86 8.62,7.5 7.85,8.39L5.44,7.35L4.69,8.65L6.8,10.2C6.4,11.37 6.4,12.64 6.8,13.8L4.68,15.36L5.43,16.66L7.86,15.62C8.63,16.5 9.68,17.14 10.87,17.38L11.24,20H12.76L13.13,17.39C14.32,17.14 15.37,16.5 16.14,15.62L18.57,16.66L19.32,15.36L17.2,13.81C17.6,12.64 17.6,11.37 17.2,10.2L19.31,8.65L18.56,7.35L16.15,8.39C15.38,7.5 14.32,6.86 13.12,6.62L12.75,4H11.25Z" />
             </svg>
-            <span className="model-label">{selectedModel === 'nvidia' ? 'NVIDIA' : 'OpenAI'}</span>
+            <span className="model-label">{imageProvider.toUpperCase()}</span>
           </button>
           <button 
             onClick={toggleTheme}
@@ -426,8 +498,6 @@ function App() {
               </svg>
             )}
           </button>
-          <span className="settings-icon">⚙️</span>
-          <span className="user-icon">👤</span>
         </div>
       </header>
 
@@ -587,6 +657,119 @@ function App() {
             <div className="modal-desc-area">
               <div className="modal-title">{modalTitle}</div>
               <div className="modal-desc">{modalDesc || <span style={{ opacity: 0.6, fontStyle: 'italic' }}>No description provided</span>}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="modal-overlay" onClick={() => setShowSettings(false)}>
+          <div className="settings-modal" onClick={e => e.stopPropagation()}>
+            <div className="settings-header">
+              <h2>Model Settings</h2>
+              <button className="modal-close" onClick={() => setShowSettings(false)}>&times;</button>
+            </div>
+            
+            <div className="settings-body">
+              <div className="setting-group">
+                <label>Image Provider</label>
+                <select 
+                  value={imageProvider} 
+                  onChange={(e) => setImageProvider(e.target.value)}
+                  className="setting-select"
+                >
+                  <option value="litellm">LiteLLM (Proxy)</option>
+                  <option value="nvidia">NVIDIA Direct</option>
+                  <option value="openai">OpenAI Direct</option>
+                </select>
+                <span className="setting-hint">Provider for image generation</span>
+              </div>
+
+              <div className="setting-group">
+                <label>Vision Model (Menu Parsing)</label>
+                <select 
+                  value={visionModel} 
+                  onChange={(e) => setVisionModel(e.target.value)}
+                  className="setting-select"
+                >
+                  {availableModels.vision.length > 0 ? (
+                    availableModels.vision.map(model => (
+                      <option key={model} value={model}>{model}</option>
+                    ))
+                  ) : (
+                    <option value={visionModel}>{visionModel}</option>
+                  )}
+                </select>
+                <span className="setting-hint">Model for understanding menu images</span>
+              </div>
+
+              <div className="setting-group">
+                <label>Image Generation Model</label>
+                <select
+                  value={imageGenModel}
+                  onChange={(e) => setImageGenModel(e.target.value)}
+                  className="setting-select"
+                >
+                  {imageProvider === 'nvidia' ? (
+                    NVIDIA_IMAGE_MODELS.map(model => (
+                      <option key={model.value} value={model.value}>{model.label}</option>
+                    ))
+                  ) : availableModels.image.length > 0 ? (
+                    availableModels.image.map(model => (
+                      <option key={model} value={model}>{model}</option>
+                    ))
+                  ) : (
+                    <option value={imageGenModel}>{imageGenModel}</option>
+                  )}
+                </select>
+                <span className="setting-hint">Model for generating menu item images</span>
+              </div>
+
+              <div className="setting-group">
+                <label>Video Generation Model</label>
+                <select 
+                  value={videoGenModel} 
+                  onChange={(e) => setVideoGenModel(e.target.value)}
+                  className="setting-select"
+                >
+                  {availableModels.video.length > 0 ? (
+                    availableModels.video.map(model => (
+                      <option key={model} value={model}>{model}</option>
+                    ))
+                  ) : (
+                    <option value={videoGenModel}>{videoGenModel}</option>
+                  )}
+                </select>
+                <span className="setting-hint">Model for video generation (future use)</span>
+              </div>
+
+              <div className="setting-group">
+                <label>LLM Model (Descriptions)</label>
+                <select 
+                  value={llmModel} 
+                  onChange={(e) => setLlmModel(e.target.value)}
+                  className="setting-select"
+                >
+                  {availableModels.text.length > 0 ? (
+                    availableModels.text.map(model => (
+                      <option key={model} value={model}>{model}</option>
+                    ))
+                  ) : (
+                    <option value={llmModel}>{llmModel}</option>
+                  )}
+                </select>
+                <span className="setting-hint">Model for generating/simplifying descriptions</span>
+              </div>
+            </div>
+
+            <div className="settings-footer">
+              <button 
+                className="btn-primary" 
+                onClick={() => setShowSettings(false)}
+              >
+                Apply Settings
+              </button>
             </div>
           </div>
         </div>

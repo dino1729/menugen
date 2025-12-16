@@ -4,50 +4,50 @@ from dotenv import load_dotenv
 # Load environment variables from .env file BEFORE other imports
 load_dotenv() 
 
-# --- Rest of your existing imports ---
 import logging
-from fastapi import FastAPI, UploadFile, WebSocket, WebSocketDisconnect, BackgroundTasks, Request
-from fastapi.responses import JSONResponse, StreamingResponse, Response
-from fastapi.middleware.cors import CORSMiddleware
-# Import the custom exception and utilities
-from client_utils import ImageGenerationError, clear_images_folder as clear_images_util
-from image_utils import encode_image_to_base64
-
-# Import provider-specific implementations
-from nvidia_image_parser import parse_menu_image_nvidia
-from openai_image_parser import parse_menu_image_openai
-from nvidia_description import simplify_menu_item_description_nvidia
-from openai_description import simplify_menu_item_description_openai
-from nvidia_image_generation import generate_menu_item_image_nvidia
-from openai_image_generation import generate_menu_item_image_openai
-
-# Wrapper functions to route to appropriate provider
-async def parse_menu_image(image_content: bytes, model_provider: str = "nvidia"):
-    """Route menu image parsing to appropriate provider."""
-    if model_provider == "nvidia":
-        return await parse_menu_image_nvidia(image_content)
-    else:
-        return await parse_menu_image_openai(image_content)
-
-async def simplify_menu_item_description(item, model_provider: str = "nvidia"):
-    """Route description simplification to appropriate provider."""
-    if model_provider == "nvidia":
-        return await simplify_menu_item_description_nvidia(item)
-    else:
-        return await simplify_menu_item_description_openai(item)
-
-async def generate_menu_item_image(item, model_provider: str = "nvidia"):
-    """Route image generation to appropriate provider."""
-    if model_provider == "nvidia":
-        return await generate_menu_item_image_nvidia(item)
-    else:
-        return await generate_menu_item_image_openai(item)
 import asyncio
 import uuid
-from fastapi.staticfiles import StaticFiles
 import glob
-import httpx
-from urllib.parse import urlparse, unquote
+from fastapi import FastAPI, UploadFile, WebSocket, WebSocketDisconnect, BackgroundTasks, Request, Form
+from fastapi.responses import JSONResponse, StreamingResponse, Response
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
+
+# Import the custom exception and utilities
+from client_utils import ImageGenerationError, clear_images_folder as clear_images_util
+
+# Import provider-specific implementations
+from litellm_client import (
+    parse_menu_image_litellm,
+    simplify_menu_item_description_litellm,
+    generate_menu_item_image_litellm
+)
+from nvidia_image_generation import generate_menu_item_image_nvidia
+
+# Configuration
+# "litellm" (for Gemini/Others via proxy) or "nvidia"
+IMAGE_PROVIDER = os.getenv("IMAGE_PROVIDER", "litellm").lower() 
+
+# Wrapper functions to route to appropriate provider (with session config support)
+async def parse_menu_image(image_content: bytes, session_config: dict = None):
+    """Route menu image parsing to LiteLLM with optional session config."""
+    return await parse_menu_image_litellm(image_content, session_config)
+
+async def simplify_menu_item_description(item, session_config: dict = None):
+    """Route description simplification to LiteLLM with optional session config."""
+    return await simplify_menu_item_description_litellm(item, session_config)
+
+async def generate_menu_item_image(item, session_config: dict = None):
+    """Route image generation based on session configuration or global default."""
+    provider = (session_config or {}).get("image_provider", IMAGE_PROVIDER)
+    logger.info(f"[DEBUG] generate_menu_item_image: provider={provider}, session_config={session_config}")
+
+    if provider == "nvidia":
+        return await generate_menu_item_image_nvidia(item, session_config)
+    else:
+        # Use litellm (supports openai, gemini, etc. via proxy)
+        return await generate_menu_item_image_litellm(item, session_config)
 
 # Logging setup
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -79,35 +79,213 @@ def read_root():
     logger.info("Received request at root endpoint.")
     return {"message": "Welcome to the Menu Parser & Illustrator API!"}
 
-@app.post("/upload_menu/")
-async def upload_menu(file: UploadFile, request: Request):
-    logger.info(f"Received file upload: filename={file.filename}, content_type={file.content_type}")
-    content = await file.read()
+@app.get("/config")
+async def get_config():
+    """
+    Return current backend configuration including available providers and selected models.
+    Frontend uses this to display current settings and populate model dropdowns.
+    """
+    logger.info("Received request for configuration.")
+    return {
+        "image_provider": os.getenv("IMAGE_PROVIDER", "litellm"),
+        "vision_model": os.getenv("VISION_MODEL", "gpt-4o"),
+        "image_gen_model": os.getenv("IMAGE_GEN_MODEL", "gemini-3-pro-image-preview"),
+        "video_gen_model": os.getenv("VIDEO_GEN_MODEL", "veo-3.0-generate-001"),
+        "llm_model": os.getenv("LLM_MODEL", "gpt-4o"),
+        "litellm_base_url": os.getenv("LITELLM_BASE_URL", "http://localhost:4000"),
+        "nvidia_available": bool(os.getenv("NVIDIA_API_KEY")),
+    }
+
+@app.get("/models")
+async def get_models():
+    """
+    Fetch available models from LiteLLM proxy.
+    Returns a categorized list of models by capability (vision, image, video, text).
+    """
+    logger.info("Fetching available models from LiteLLM proxy.")
+    import httpx
     
-    # Try to get model_provider from form data
-    form_data = await request.form()
-    model_provider = form_data.get("model_provider", "nvidia")
-    logger.info(f"Model provider selected: {model_provider}")
+    litellm_base_url = os.getenv("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/")
+    litellm_api_key = os.getenv("LITELLM_API_KEY", "")
+    
+    try:
+        headers = {"Authorization": f"Bearer {litellm_api_key}"} if litellm_api_key else {}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{litellm_base_url}/v1/models", headers=headers)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch models from LiteLLM: {response.status_code}")
+                return {
+                    "success": False,
+                    "error": f"LiteLLM returned status {response.status_code}",
+                    "models": []
+                }
+            
+            data = response.json()
+            models = data.get("data", [])
+            
+            # Extract model IDs and categorize them (using sets to avoid duplicates)
+            model_set = set()
+            vision_models = set()
+            image_models = set()
+            video_models = set()
+            text_models = set()
+            
+            for model in models:
+                model_id = model.get("id", "")
+                if not model_id:
+                    continue
+                
+                # Skip perflab duplicates
+                if model_id.endswith("-perflab"):
+                    continue
+                    
+                model_set.add(model_id)
+                model_lower = model_id.lower()
+                
+                # Categorize models based on known capabilities
+                # Vision models (multimodal models that can understand images)
+                # Include GPT-4+, GPT-5+, Gemini 1.5+, Claude 3+, and other vision models
+                is_vision = (
+                    "vision" in model_lower or
+                    model_lower.startswith("gpt-4") or  # GPT-4, 4o, 4.1
+                    model_lower.startswith("gpt-5") or  # GPT-5, 5.1, 5.2
+                    "gpt-4o" in model_lower or
+                    "gemini-1.5" in model_lower or
+                    "gemini-2" in model_lower or  # Gemini 2.0, 2.5
+                    "gemini-3" in model_lower or
+                    model_lower.startswith("claude-3") or  # Claude 3 (Opus, Sonnet, Haiku)
+                    "claude-4" in model_lower or  # Claude 4 (Haiku 4.5, Sonnet 4, Opus 4)
+                    "claude-haiku-4" in model_lower or
+                    "claude-sonnet-4" in model_lower or
+                    "claude-opus-4" in model_lower or
+                    "phi-4-multimodal" in model_lower or
+                    "llama-3.2-90b-vision" in model_lower or
+                    "pixtral" in model_lower or
+                    "qwen-vl" in model_lower
+                )
+                if is_vision:
+                    vision_models.add(model_id)
+                
+                # Image generation models
+                if any(keyword in model_lower for keyword in [
+                    "dall-e", "imagen", "flux", "stable-diffusion", "midjourney",
+                    "image-preview", "imagen-3", "sd-", "sdxl"
+                ]):
+                    image_models.add(model_id)
+                
+                # Video generation models
+                if any(keyword in model_lower for keyword in [
+                    "veo", "sora", "gen-3", "runway", "video"
+                ]):
+                    video_models.add(model_id)
+                
+                # Text models (all models can do text, but we filter to common ones)
+                if any(keyword in model_lower for keyword in [
+                    "gpt", "claude", "gemini", "llama", "mistral", "phi", 
+                    "haiku", "sonnet", "opus", "qwen", "deepseek", "nemotron",
+                    "devstral", "ministral", "kimi", "o1", "o3", "o4"
+                ]):
+                    text_models.add(model_id)
+            
+            logger.info(f"Successfully fetched {len(model_set)} unique models from LiteLLM.")
+            logger.info(f"Categorized: {len(vision_models)} vision, {len(image_models)} image, {len(video_models)} video, {len(text_models)} text")
+            return {
+                "success": True,
+                "models": {
+                    "all": sorted(list(model_set)),
+                    "vision": sorted(list(vision_models)),
+                    "image": sorted(list(image_models)),
+                    "video": sorted(list(video_models)),
+                    "text": sorted(list(text_models)),
+                }
+            }
+            
+    except Exception as e:
+        logger.error(f"Error fetching models from LiteLLM: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "models": {
+                "all": [],
+                "vision": [],
+                "image": [],
+                "video": [],
+                "text": []
+            }
+        }
+
+@app.post("/upload_menu/")
+async def upload_menu(
+    file: UploadFile,
+    request: Request,
+    image_provider: Optional[str] = Form(None),
+    vision_model: Optional[str] = Form(None),
+    image_gen_model: Optional[str] = Form(None),
+    video_gen_model: Optional[str] = Form(None),
+    llm_model: Optional[str] = Form(None)
+):
+    """
+    Upload a menu image and start processing with optional model/provider overrides.
+    
+    Form parameters:
+    - file: The menu image file
+    - image_provider: Provider for image generation ("litellm", "nvidia", "openai")
+    - vision_model: Model for menu parsing (vision/multimodal)
+    - image_gen_model: Model for generating menu item images
+    - video_gen_model: Model for video generation (if needed)
+    - llm_model: Model for text generation (descriptions)
+    """
+    logger.info(f"Received file upload: filename={file.filename}, content_type={file.content_type}")
+    logger.info(f"Provider settings: image_provider={image_provider}, vision={vision_model}, image_gen={image_gen_model}")
+    
+    content = await file.read()
     
     session_id = str(uuid.uuid4())
     logger.info(f"Generated session_id={session_id} for upload.")
-    asyncio.create_task(process_menu(session_id, content, model_provider))
+    
+    # Store model preferences with session
+    session_config = {
+        "image_provider": image_provider or os.getenv("IMAGE_PROVIDER", "litellm"),
+        "vision_model": vision_model or os.getenv("VISION_MODEL", "gpt-4o"),
+        "image_gen_model": image_gen_model or os.getenv("IMAGE_GEN_MODEL", "gemini-3-pro-image-preview"),
+        "video_gen_model": video_gen_model or os.getenv("VIDEO_GEN_MODEL", "veo-3.0-generate-001"),
+        "llm_model": llm_model or os.getenv("LLM_MODEL", "gpt-4o"),
+    }
+    
+    asyncio.create_task(process_menu(session_id, content, session_config))
     logger.info(f"Started background task for session_id={session_id}.")
     return JSONResponse(content={"status": "processing", "sessionId": session_id})
 
 @app.post("/parse_menu_only/")
-async def parse_menu_only(file: UploadFile, request: Request):
+async def parse_menu_only(
+    file: UploadFile,
+    request: Request,
+    vision_model: Optional[str] = Form(None),
+    llm_model: Optional[str] = Form(None)
+):
+    """
+    Parse menu image only (no image generation) with optional model overrides.
+    
+    Form parameters:
+    - file: The menu image file
+    - vision_model: Model for menu parsing (vision/multimodal)
+    - llm_model: Model for text generation (descriptions)
+    """
     logger.info(f"Received file for parsing only: filename={file.filename}, content_type={file.content_type}")
+    logger.info(f"Model settings: vision={vision_model}, llm={llm_model}")
+    
     content = await file.read()
     
-    # Try to get model_provider from form data
-    form_data = await request.form()
-    model_provider = form_data.get("model_provider", "nvidia")
-    logger.info(f"Model provider selected for parsing: {model_provider}")
+    # Create session config
+    session_config = {
+        "vision_model": vision_model or os.getenv("VISION_MODEL", "gpt-4o"),
+        "llm_model": llm_model or os.getenv("LLM_MODEL", "gpt-4o"),
+    }
     
     try:
         logger.info("Calling parse_menu_image for parsing only.")
-        parsed_data = await parse_menu_image(content, model_provider)
+        parsed_data = await parse_menu_image(content, session_config)
         logger.info(f"Menu parsed successfully (parsing only): {parsed_data}")
 
         # Determine the list of items
@@ -124,7 +302,7 @@ async def parse_menu_only(file: UploadFile, request: Request):
         # Simplify or generate descriptions for all items
         if items:
             logger.info(f"Processing descriptions for {len(items)} items.")
-            simplification_tasks = [simplify_menu_item_description(item, model_provider) for item in items]
+            simplification_tasks = [simplify_menu_item_description(item, session_config) for item in items]
             
             # Run simplification/generation tasks concurrently
             processed_descriptions = await asyncio.gather(*simplification_tasks)
@@ -139,7 +317,7 @@ async def parse_menu_only(file: UploadFile, request: Request):
         # Return the original structure (dict or list) with updated descriptions
         return JSONResponse(content={"status": "success", "data": parsed_data})
     except Exception as e:
-        logger.error(f"Error during parsing only: {e}", exc_info=True) # Log traceback
+        logger.error(f"Error during parsing only: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 @app.websocket("/ws/{session_id}")
@@ -165,10 +343,18 @@ def safe_send_json(websocket, data):
     except Exception as e:
         logger.error(f"Send error: {e}")
 
-# Using clear_images_util from client_utils (imported above as clear_images_util)
-
-async def process_menu(session_id, image_content, model_provider="nvidia"):
-    logger.info(f"Begin processing menu for session_id={session_id} with model_provider={model_provider}.")
+async def process_menu(session_id, image_content, session_config: dict = None):
+    """
+    Process menu with optional session configuration for model/provider overrides.
+    
+    Args:
+        session_id: Unique session identifier
+        image_content: Raw image bytes
+        session_config: Optional dict with model/provider overrides
+    """
+    logger.info(f"Begin processing menu for session_id={session_id}.")
+    if session_config:
+        logger.info(f"Using session config: {session_config}")
 
     # Clear images folder before generating new images
     clear_images_util()
@@ -185,20 +371,17 @@ async def process_menu(session_id, image_content, model_provider="nvidia"):
 
     if not websocket:
         logger.error(f"No WebSocket found for session_id={session_id} after waiting.")
-        # Optionally, clean up or handle the case where the client never connects
         return
 
     try:
         # Step 1: Parse menu
-        model_display = "NVIDIA" if model_provider == "nvidia" else "OpenAI"
-        await safe_send_json(websocket, {"type": "status", "message": f"Parsing menu with {model_display}..."})
-        logger.info(f"Calling parse_menu_image for session_id={session_id} with provider={model_provider}.")
-        parsed_menu = await parse_menu_image(image_content, model_provider)
+        await safe_send_json(websocket, {"type": "status", "message": f"Parsing menu..."})
+        logger.info(f"Calling parse_menu_image for session_id={session_id}.")
+        parsed_menu = await parse_menu_image(image_content, session_config)
         logger.info(f"Menu parsed for session_id={session_id}: {parsed_menu}")
         await safe_send_json(websocket, {"type": "menu_parsed", "data": parsed_menu})
 
         # Step 2: Generate images for each item
-        # Handle both dict and list responses for parsed_menu
         items = []
         if isinstance(parsed_menu, dict):
             items = parsed_menu.get("items", [])
@@ -213,16 +396,16 @@ async def process_menu(session_id, image_content, model_provider="nvidia"):
              logger.warning(f"No items found to generate images for session_id={session_id}.")
              await safe_send_json(websocket, {"type": "status", "message": "No menu items found to generate images for."})
              await safe_send_json(websocket, {"type": "done"})
-             return # Exit if no items
+             return 
 
         # Simplify descriptions before generating images
-        logger.info(f"Processing descriptions for {len(items)} items before image generation with {model_provider}.")
+        logger.info(f"Processing descriptions for {len(items)} items before image generation.")
         
         tasks_for_gather = []
         indices_of_dict_items = []
         for i, item_to_process in enumerate(items):
             if isinstance(item_to_process, dict):
-                tasks_for_gather.append(simplify_menu_item_description(item_to_process, model_provider))
+                tasks_for_gather.append(simplify_menu_item_description(item_to_process, session_config))
                 indices_of_dict_items.append(i)
         
         if tasks_for_gather:
@@ -230,57 +413,44 @@ async def process_menu(session_id, image_content, model_provider="nvidia"):
             for i, original_item_index in enumerate(indices_of_dict_items):
                 items[original_item_index]['description'] = processed_descriptions[i]
             logger.info("Descriptions processed successfully before image generation.")
-            # Send the updated menu data (with simplified descriptions) again
-            # `parsed_menu` has been updated in place because `items` refers to its contents.
+            # Send the updated menu data again
             await safe_send_json(websocket, {"type": "menu_parsed", "data": parsed_menu})
         else:
             logger.info("No dictionary items found to process descriptions for.")
 
+        provider = (session_config or {}).get("image_provider", IMAGE_PROVIDER) if session_config else IMAGE_PROVIDER
         for idx, item in enumerate(items):
-            # Ensure item is a dictionary before accessing keys
             if not isinstance(item, dict):
                 logger.warning(f"Skipping item at index {idx} because it's not a dictionary: {item}")
                 continue
-            item_name = item.get('name', f'Unknown Item {idx+1}') # Use get with default
-            logger.info(f"Generating image for item {item_name} (session_id={session_id}, idx={idx}) using {model_provider}.")
-            model_display = "NVIDIA Stable Diffusion 3" if model_provider == "nvidia" else "OpenAI DALL-E 3"
-            await safe_send_json(websocket, {"type": "status", "message": f"Generating image for {item_name} ({idx+1}/{len(items)}) with {model_display}..."})
+            item_name = item.get('name', f'Unknown Item {idx+1}')
+            logger.info(f"Generating image for item {item_name} (session_id={session_id}, idx={idx}) using {provider}.")
+            await safe_send_json(websocket, {"type": "status", "message": f"Generating image for {item_name} ({idx+1}/{len(items)})..."})
             try:
-                # generate_menu_item_image now returns the local filename
-                local_filename = await generate_menu_item_image(item, model_provider)
+                local_filename = await generate_menu_item_image(item, session_config)
                 logger.info(f"Image generated and saved locally as {local_filename} for item {item_name} (session_id={session_id}).")
 
-                # Construct the relative URL for the static file server
                 image_static_url = f"/images/{local_filename}"
-                logger.info(f"Constructed static URL for {item_name}: {image_static_url}")
-
-                # Send the static URL
                 await safe_send_json(websocket, {"type": "image_generated", "item": item_name, "url": image_static_url})
-            except ImageGenerationError as img_err: # Catch the specific error
+            except ImageGenerationError as img_err:
                 logger.error(f"Image generation failed permanently for item {item_name} (session_id={session_id}): {img_err}")
-                # Send a specific error type for the UI to handle
                 await safe_send_json(websocket, {"type": "image_generation_failed", "item": item_name, "message": str(img_err)})
-            except Exception as e: # Catch other potential errors during generation for this item
+            except Exception as e:
                 logger.error(f"Unexpected error during image generation for item {item_name} (session_id={session_id}): {e}")
                 await safe_send_json(websocket, {"type": "image_error", "item": item_name, "message": f"Unexpected error: {str(e)}"})
         
         await safe_send_json(websocket, {"type": "done"})
-        logger.info(f"Finished processing items for session_id={session_id}.") # Changed log message slightly
+        logger.info(f"Finished processing items for session_id={session_id}.")
     
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected during processing for session_id={session_id}.")
-        # No need to send error, connection is gone
 
     except Exception as e:
-        # Catch all other errors (e.g., parsing, initial connection issues)
-        logger.critical(f"Critical error in process_menu for session_id={session_id}: {e}", exc_info=True) # Add exc_info for traceback
-        # Ensure websocket is still valid before sending error
+        logger.critical(f"Critical error in process_menu for session_id={session_id}: {e}", exc_info=True)
         if websocket and websocket.client_state.name == 'CONNECTED':
-            # Send a generic processor error
             await safe_send_json(websocket, {"type": "error", "source": "processor", "message": f"An unexpected error occurred: {str(e)}"})
         else:
             logger.error(f"WebSocket for session {session_id} is closed or invalid, cannot send final error.")
     finally:
-        # Clean up session
         logger.info(f"Cleaning up session {session_id}.")
         sessions.pop(session_id, None)

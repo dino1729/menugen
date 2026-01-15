@@ -77,58 +77,52 @@ function App() {
   const [imageProvider, setImageProvider] = useState<string>('litellm');
   const [visionModel, setVisionModel] = useState<string>('gpt-4o');
   const [imageGenModel, setImageGenModel] = useState<string>('gemini-3-pro-image-preview');
-  const [videoGenModel, setVideoGenModel] = useState<string>('veo-3.0-generate-001');
-  const [llmModel, setLlmModel] = useState<string>('gpt-4o');
-  
-  // Available models from backend
+  const [videoGenModel, setVideoGenModel] = useState<string>('veo-3.1-generate-001');
+  const [descriptionModel, setDescriptionModel] = useState<string>('gemini-3-flash-preview');
+
+  // Available models from backend (curated whitelists from config.json)
   const [availableModels, setAvailableModels] = useState<{
-    all: string[];
     vision: string[];
     image: string[];
     video: string[];
     text: string[];
   }>({
-    all: [],
     vision: [],
     image: [],
     video: [],
     text: []
   });
 
-  // Fetch configuration and available models on mount
+  // Fetch configuration and curated model whitelists on mount
   useEffect(() => {
     const fetchConfig = async () => {
       try {
         const response = await fetch(`${API_ORIGIN}/config`);
         if (response.ok) {
           const config = await response.json();
+          // Set current model selections from backend defaults
           setImageProvider(config.image_provider || 'litellm');
           setVisionModel(config.vision_model || 'gpt-4o');
           setImageGenModel(config.image_gen_model || 'gemini-3-pro-image-preview');
-          setVideoGenModel(config.video_gen_model || 'veo-3.0-generate-001');
-          setLlmModel(config.llm_model || 'gpt-4o');
+          setVideoGenModel(config.video_gen_model || 'veo-3.1-generate-001');
+          setDescriptionModel(config.description_model || 'gemini-3-flash-preview');
+
+          // Use curated whitelists from config.json if available
+          if (config.whitelists) {
+            setAvailableModels({
+              vision: config.whitelists.vision || [],
+              text: config.whitelists.text || [],
+              image: config.whitelists.image || [],
+              video: config.whitelists.video || []
+            });
+          }
         }
       } catch (error) {
         console.error('Failed to fetch config:', error);
       }
     };
 
-    const fetchModels = async () => {
-      try {
-        const response = await fetch(`${API_ORIGIN}/models`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.models) {
-            setAvailableModels(data.models);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch models:', error);
-      }
-    };
-
     fetchConfig();
-    fetchModels();
   }, []);
 
   // Update image generation model when provider changes
@@ -226,7 +220,7 @@ function App() {
     formData.append('vision_model', visionModel);
     formData.append('image_gen_model', imageGenModel);
     formData.append('video_gen_model', videoGenModel);
-    formData.append('llm_model', llmModel);
+    formData.append('description_model', descriptionModel);
     try {
       setStatus(`Uploading menu (using ${imageProvider.toUpperCase()} with ${imageGenModel})...`);
       setProgress(5); // Initial progress
@@ -260,7 +254,7 @@ function App() {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('vision_model', visionModel);
-    formData.append('llm_model', llmModel);
+    formData.append('description_model', descriptionModel);
     try {
       setStatus(`Uploading and Parsing with ${visionModel}...`);
       setProgress(10);
@@ -674,16 +668,15 @@ function App() {
             <div className="settings-body">
               <div className="setting-group">
                 <label>Image Provider</label>
-                <select 
-                  value={imageProvider} 
+                <select
+                  value={imageProvider}
                   onChange={(e) => setImageProvider(e.target.value)}
                   className="setting-select"
                 >
                   <option value="litellm">LiteLLM (Proxy)</option>
                   <option value="nvidia">NVIDIA Direct</option>
-                  <option value="openai">OpenAI Direct</option>
                 </select>
-                <span className="setting-hint">Provider for image generation</span>
+                <span className="setting-hint">Provider for image generation (NVIDIA requires API key)</span>
               </div>
 
               <div className="setting-group">
@@ -745,10 +738,10 @@ function App() {
               </div>
 
               <div className="setting-group">
-                <label>LLM Model (Descriptions)</label>
-                <select 
-                  value={llmModel} 
-                  onChange={(e) => setLlmModel(e.target.value)}
+                <label>Description Model</label>
+                <select
+                  value={descriptionModel}
+                  onChange={(e) => setDescriptionModel(e.target.value)}
                   className="setting-select"
                 >
                   {availableModels.text.length > 0 ? (
@@ -756,7 +749,7 @@ function App() {
                       <option key={model} value={model}>{model}</option>
                     ))
                   ) : (
-                    <option value={llmModel}>{llmModel}</option>
+                    <option value={descriptionModel}>{descriptionModel}</option>
                   )}
                 </select>
                 <span className="setting-hint">Model for generating/simplifying descriptions</span>

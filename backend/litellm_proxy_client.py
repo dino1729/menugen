@@ -10,30 +10,21 @@ All calls go through:
   - /v1/video/generations (video generation, with fallback to images endpoint)
 
 Includes built-in retry/backoff for transient errors (429, 5xx).
+Configuration is loaded from config.py module.
 """
 import asyncio
 import base64
 import json
 import logging
-import os
 import random
 import re
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import httpx
 
+from config import get_config, get_base_url_with_v1, get_retry_status_codes
+
 logger = logging.getLogger("menugen.litellm_proxy_client")
-
-# --- Configuration from environment ---
-LITELLM_BASE_URL = os.getenv("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/")
-LITELLM_API_KEY = os.getenv("LITELLM_API_KEY", "")
-
-# --- Retry configuration ---
-RETRY_STATUS_CODES = {429, 408, 500, 502, 503, 504}
-MAX_RETRIES = 5
-INITIAL_BACKOFF_SECONDS = 1.0
-MAX_BACKOFF_SECONDS = 30.0
-JITTER_FACTOR = 0.1  # 10% jitter
 
 
 class ProxyClientError(Exception):
@@ -49,6 +40,9 @@ async def _calculate_backoff(attempt: int, response: Optional[httpx.Response] = 
     Calculate backoff time with exponential increase and jitter.
     Respects Retry-After header if present.
     """
+    config = get_config()
+    retry_cfg = config.retry
+
     # Check for Retry-After header
     if response is not None:
         retry_after = response.headers.get("Retry-After")
@@ -57,10 +51,13 @@ async def _calculate_backoff(attempt: int, response: Optional[httpx.Response] = 
                 return float(retry_after)
             except ValueError:
                 pass  # Fall through to exponential backoff
-    
+
     # Exponential backoff with jitter
-    backoff = min(INITIAL_BACKOFF_SECONDS * (2 ** attempt), MAX_BACKOFF_SECONDS)
-    jitter = backoff * JITTER_FACTOR * random.random()
+    backoff = min(
+        retry_cfg.initial_backoff_seconds * (2 ** attempt),
+        retry_cfg.max_backoff_seconds
+    )
+    jitter = backoff * retry_cfg.jitter_factor * random.random()
     return backoff + jitter
 
 
@@ -74,14 +71,18 @@ async def _request_with_retry(
 ) -> httpx.Response:
     """
     Make an HTTP request with automatic retry on transient errors.
-    
+
     Retries on: 429 (rate limit), 408 (timeout), 500/502/503/504 (server errors)
     Uses exponential backoff with jitter, respects Retry-After header.
     """
+    config = get_config()
+    max_retries = config.retry.max_retries
+    retry_status_codes = get_retry_status_codes()
+
     last_exception: Optional[Exception] = None
     last_response: Optional[httpx.Response] = None
-    
-    for attempt in range(MAX_RETRIES):
+
+    for attempt in range(max_retries):
         try:
             response = await client.request(
                 method=method,
@@ -90,28 +91,28 @@ async def _request_with_retry(
                 json=json_body,
                 timeout=timeout,
             )
-            
-            if response.status_code not in RETRY_STATUS_CODES:
+
+            if response.status_code not in retry_status_codes:
                 return response
-            
+
             # Retriable status code - log and backoff
             last_response = response
             backoff = await _calculate_backoff(attempt, response)
             logger.warning(
                 f"Retriable status {response.status_code} on {url}, "
-                f"attempt {attempt + 1}/{MAX_RETRIES}, backing off {backoff:.2f}s"
+                f"attempt {attempt + 1}/{max_retries}, backing off {backoff:.2f}s"
             )
             await asyncio.sleep(backoff)
-            
+
         except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout) as e:
             last_exception = e
             backoff = await _calculate_backoff(attempt)
             logger.warning(
                 f"Connection error on {url}: {e}, "
-                f"attempt {attempt + 1}/{MAX_RETRIES}, backing off {backoff:.2f}s"
+                f"attempt {attempt + 1}/{max_retries}, backing off {backoff:.2f}s"
             )
             await asyncio.sleep(backoff)
-    
+
     # All retries exhausted
     if last_response is not None:
         raise ProxyClientError(
@@ -127,7 +128,8 @@ async def _request_with_retry(
 
 def _get_headers(api_key: Optional[str] = None) -> Dict[str, str]:
     """Build standard headers for proxy requests."""
-    key = api_key or LITELLM_API_KEY
+    config = get_config()
+    key = api_key or config.openai_api_key
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -154,25 +156,29 @@ async def chat_completions(
 ) -> Dict[str, Any]:
     """
     Call the LiteLLM proxy's /v1/chat/completions endpoint.
-    
+
     Args:
         model: Model name (as configured in your LiteLLM proxy)
         messages: List of message dicts with 'role' and 'content'
-        base_url: Override LITELLM_BASE_URL
-        api_key: Override LITELLM_API_KEY
+        base_url: Override default base URL from config
+        api_key: Override default API key from config
         max_tokens: Maximum tokens to generate
         temperature: Sampling temperature
         response_format: Optional {"type": "json_object"} for JSON mode
         timeout: Request timeout in seconds
         **kwargs: Additional parameters to pass to the API
-        
+
     Returns:
         Raw JSON response dict from the proxy
-        
+
     Raises:
         ProxyClientError: On non-retriable errors or max retries exceeded
     """
-    url = f"{base_url or LITELLM_BASE_URL}/v1/chat/completions"
+    effective_base = base_url or get_base_url_with_v1()
+    # Ensure URL ends with /v1 for the endpoint
+    if not effective_base.endswith("/v1"):
+        effective_base = f"{effective_base.rstrip('/')}/v1"
+    url = f"{effective_base}/chat/completions"
     headers = _get_headers(api_key)
     
     body: Dict[str, Any] = {
@@ -181,6 +187,8 @@ async def chat_completions(
     }
     if max_tokens is not None:
         body["max_tokens"] = max_tokens
+        # Gemini uses max_output_tokens, add both for compatibility
+        body["max_output_tokens"] = max_tokens
     if temperature is not None:
         body["temperature"] = temperature
     if response_format is not None:
@@ -205,15 +213,21 @@ async def chat_completions(
 def extract_chat_content(response: Dict[str, Any]) -> str:
     """
     Extract the text content from a chat completions response.
-    
+
     Args:
         response: Raw JSON response from chat_completions()
-        
+
     Returns:
         The assistant's message content as a string
+
+    Raises:
+        ProxyClientError: If content cannot be extracted
     """
     try:
-        return response["choices"][0]["message"]["content"].strip()
+        content = response["choices"][0]["message"]["content"]
+        if content is None:
+            raise ProxyClientError(f"Chat content is None, response: {response}")
+        return content.strip()
     except (KeyError, IndexError, TypeError) as e:
         raise ProxyClientError(f"Failed to extract chat content: {e}, response: {response}")
 
@@ -271,22 +285,25 @@ async def image_generations(
 ) -> Dict[str, Any]:
     """
     Call the LiteLLM proxy's /v1/images/generations endpoint.
-    
+
     Args:
         model: Image model name (as configured in your LiteLLM proxy)
         prompt: Text description of the image to generate
-        base_url: Override LITELLM_BASE_URL
-        api_key: Override LITELLM_API_KEY
+        base_url: Override default base URL from config
+        api_key: Override default API key from config
         size: Image size (e.g., "1024x1024")
         n: Number of images to generate
         response_format: "url" for URL or "b64_json" for base64
         timeout: Request timeout in seconds
         **kwargs: Additional parameters
-        
+
     Returns:
         Raw JSON response dict from the proxy
     """
-    url = f"{base_url or LITELLM_BASE_URL}/v1/images/generations"
+    effective_base = base_url or get_base_url_with_v1()
+    if not effective_base.endswith("/v1"):
+        effective_base = f"{effective_base.rstrip('/')}/v1"
+    url = f"{effective_base}/images/generations"
     headers = _get_headers(api_key)
     
     body: Dict[str, Any] = {
@@ -387,23 +404,24 @@ async def video_generations(
 ) -> Dict[str, Any]:
     """
     Call the LiteLLM proxy's /v1/videos endpoint for video generation.
-    
+
     See: https://docs.litellm.ai/docs/providers/openai/videos
-    
+
     Args:
         model: Video model name (e.g., "sora-2", "veo-3.0-generate-001")
         prompt: Text description of the video to generate
-        base_url: Override LITELLM_BASE_URL
-        api_key: Override LITELLM_API_KEY
+        base_url: Override default base URL from config
+        api_key: Override default API key from config
         seconds: Video duration in seconds (e.g., "8", "16")
         size: Video dimensions (e.g., "720x1280", "1280x720")
         timeout: Request timeout (video generation can be slow)
         **kwargs: Additional parameters
-        
+
     Returns:
         Raw JSON response dict from the proxy containing video_id and status
     """
-    base = base_url or LITELLM_BASE_URL
+    config = get_config()
+    base = base_url or config.openai_base_url
     headers = _get_headers(api_key)
     
     body: Dict[str, Any] = {
@@ -440,18 +458,19 @@ async def video_status(
 ) -> Dict[str, Any]:
     """
     Check video generation status via /v1/videos/{video_id}.
-    
+
     Args:
         video_id: The video ID returned from video_generations()
-        base_url: Override LITELLM_BASE_URL
-        api_key: Override LITELLM_API_KEY
+        base_url: Override default base URL from config
+        api_key: Override default API key from config
         custom_llm_provider: Provider name (e.g., "openai", "vertex_ai")
         timeout: Request timeout
-        
+
     Returns:
         Status response dict with video status
     """
-    base = base_url or LITELLM_BASE_URL
+    config = get_config()
+    base = base_url or config.openai_base_url
     headers = _get_headers(api_key)
     if custom_llm_provider:
         headers["custom-llm-provider"] = custom_llm_provider
@@ -479,18 +498,19 @@ async def video_content(
 ) -> bytes:
     """
     Download video content via /v1/videos/{video_id}/content.
-    
+
     Args:
         video_id: The video ID returned from video_generations()
-        base_url: Override LITELLM_BASE_URL
-        api_key: Override LITELLM_API_KEY
+        base_url: Override default base URL from config
+        api_key: Override default API key from config
         custom_llm_provider: Provider name (e.g., "openai", "vertex_ai")
         timeout: Request timeout
-        
+
     Returns:
         Raw video bytes
     """
-    base = base_url or LITELLM_BASE_URL
+    config = get_config()
+    base = base_url or config.openai_base_url
     headers = _get_headers(api_key)
     headers["Accept"] = "application/octet-stream"
     if custom_llm_provider:
@@ -542,16 +562,17 @@ async def check_proxy_health(
 ) -> Dict[str, Any]:
     """
     Check if the LiteLLM proxy is reachable and responding.
-    
+
     Tries /health first, then /v1/models as fallback.
-    
+
     Returns:
         Dict with 'healthy' boolean and 'models' list if available
-        
+
     Raises:
         ProxyClientError: If proxy is unreachable
     """
-    base = base_url or LITELLM_BASE_URL
+    config = get_config()
+    base = base_url or config.openai_base_url
     headers = _get_headers(api_key)
     
     result: Dict[str, Any] = {"healthy": False, "models": []}

@@ -1,6 +1,9 @@
 # Environment variables
 .env
 .env.local
+
+# Configuration (copy config.example.json to config.json)
+backend/config.json
 .env.development.local
 .env.test.local
 .env.production.local
@@ -58,8 +61,5 @@ tests/outputs/*
 htmlcov/
 .coverage
 
-# Documentation that should not be committed
-ENV_CONFIGURATION.md
-SECURITY_UPDATE_SUMMARY.md
-NVIDIA_INTEGRATION_SUMMARY.md
-
+.claude
+*.png

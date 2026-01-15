@@ -1,0 +1,102 @@
+{
+  "$comment": "Copy this file to config.json and customize. Environment variables override these values.",
+  "version": "1.0.0",
+
+  "defaults": {
+    "vision_model": "gpt-4o",
+    "description_model": "gemini-3-flash-preview",
+    "image_gen_model": "gemini-3-pro-image-preview",
+    "video_gen_model": "veo-3.1-generate-001"
+  },
+
+  "whitelists": {
+    "vision_models": [
+      "gpt-4o",
+      "gpt-4.1",
+      "gpt-5",
+      "gpt-5-mini",
+      "gemini-2.5-pro",
+      "gemini-2.5-flash",
+      "gemini-3-pro-preview",
+      "gemini-3-flash-preview",
+      "claude-sonnet-4",
+      "claude-opus-4-5"
+    ],
+    "text_models": [
+      "gpt-4o",
+      "gpt-5-nano",
+      "gemini-3-flash-preview",
+      "gemini-2.5-flash",
+      "claude-sonnet-4",
+      "deepseek-v3.1",
+      "llama-3.3-70b-instruct"
+    ],
+    "image_models": [
+      "gemini-3-pro-image-preview",
+      
+    ],
+    "video_models": [
+      "veo-3.1-generate-001",
+      "veo-3.0-generate-001"
+    ]
+  },
+
+  "nvidia": {
+    "base_url": "https://ai.api.nvidia.com/v1/genai",
+    "models": {
+      "stabilityai/stable-diffusion-3.5-large": {
+        "api_params": {
+          "cfg_scale": 5,
+          "aspect_ratio": "1:1",
+          "seed": 0,
+          "steps": 50,
+          "negative_prompt": ""
+        }
+      },
+      "stabilityai/stable-diffusion-3-medium": {
+        "api_params": {
+          "cfg_scale": 5,
+          "aspect_ratio": "1:1",
+          "seed": 0,
+          "steps": 50,
+          "negative_prompt": ""
+        }
+      },
+      "black-forest-labs/flux.1-schnell": {
+        "api_params": {
+          "cfg_scale": 0,
+          "width": 1024,
+          "height": 1024,
+          "seed": 0,
+          "steps": 4
+        }
+      },
+      "black-forest-labs/flux.1-dev": {
+        "api_params": {
+          "cfg_scale": 0,
+          "width": 1024,
+          "height": 1024,
+          "seed": 0,
+          "steps": 28
+        }
+      },
+      "black-forest-labs/flux.1-kontext-dev": {
+        "api_params": {
+          "cfg_scale": 0,
+          "width": 1024,
+          "height": 1024,
+          "seed": 0,
+          "steps": 28
+        }
+      }
+    }
+  },
+
+  "retry": {
+    "max_retries": 5,
+    "initial_backoff_seconds": 1.0,
+    "max_backoff_seconds": 30.0,
+    "jitter_factor": 0.1,
+    "retry_status_codes": [429, 408, 500, 502, 503, 504]
+  }
+}

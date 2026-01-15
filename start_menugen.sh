@@ -57,18 +57,15 @@ if [ "$BACKEND_RUNNING" = false ]; then
     echo -e "\n${GREEN}[1/2] Starting Backend...${NC}"
     
     cd "$SCRIPT_DIR"
-    
-    # Check for virtual environment at repo root
-    if [ -d ".venv" ]; then
-        echo "Activating virtual environment..."
-        source .venv/bin/activate
-    elif [ -d "venv" ]; then
-        echo "Activating virtual environment..."
-        source venv/bin/activate
+
+    # Check for virtual environment in backend directory
+    if [ -d "$BACKEND_DIR/venv" ]; then
+        echo "Activating backend virtual environment..."
+        source "$BACKEND_DIR/venv/bin/activate"
     else
         echo -e "${YELLOW}No virtual environment found. Creating one...${NC}"
-        python3 -m venv .venv
-        source .venv/bin/activate
+        python3 -m venv "$BACKEND_DIR/venv"
+        source "$BACKEND_DIR/venv/bin/activate"
         echo "Installing dependencies..."
         pip install -r requirements.txt
     fi
@@ -85,9 +82,9 @@ if [ "$BACKEND_RUNNING" = false ]; then
         fi
     fi
     
-    # Start uvicorn in background (from repo root, pointing to backend directory)
+    # Start uvicorn in background (use full path to venv's uvicorn for nohup)
     echo "Starting uvicorn server on port 8005..."
-    nohup uvicorn --app-dir backend main:app --host 0.0.0.0 --port 8005 > "$LOG_DIR/backend.log" 2>&1 &
+    nohup "$BACKEND_DIR/venv/bin/uvicorn" --app-dir backend main:app --host 0.0.0.0 --port 8005 > "$LOG_DIR/backend.log" 2>&1 &
     BACKEND_PID=$!
     echo "$BACKEND_PID" > "$PID_DIR/backend.pid"
     

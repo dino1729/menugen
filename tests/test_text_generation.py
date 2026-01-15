@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 # Import our proxy client instead of litellm SDK
-from backend.litellm_proxy_client import (
+from litellm_proxy_client import (
     chat_completions,
     extract_chat_content,
     extract_json_from_text,

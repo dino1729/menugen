@@ -4,26 +4,23 @@ NVIDIA NIM API Image Generation Client.
 Generates images using NVIDIA's Stable Diffusion 3 API.
 Includes automatic fallback from large to medium model on 404,
 and flexible response parsing for different API response formats.
+
+Configuration is loaded from config.py module.
 """
-import os
-import logging
-import httpx
-import base64
 import asyncio
+import base64
+import logging
+import os
 import random
-import aiofiles
 from typing import Dict, Optional, Tuple
 
+import aiofiles
+import httpx
+
+from config import get_config, get_nvidia_model_params
 from client_utils import ImageGenerationError, IMAGE_SAVE_DIR, sanitize_filename
 
 logger = logging.getLogger("menugen.nvidia_image_generation")
-
-# Get NVIDIA API key and image generation URL from environment
-NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-NVIDIA_INVOKE_URL = os.getenv("NVIDIA_IMAGE_GEN_URL")
-
-# NVIDIA NIM API base URL for image generation
-NVIDIA_API_BASE_URL = "https://ai.api.nvidia.com/v1/genai"
 
 # Alternative URLs for fallback (large -> medium)
 NVIDIA_SD3_LARGE_URL = "https://ai.api.nvidia.com/v1/genai/stabilityai/stable-diffusion-3-large"
@@ -41,58 +38,16 @@ def build_nvidia_url(model_id: str) -> str:
     Returns:
         Full API URL like 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell'
     """
-    return f"{NVIDIA_API_BASE_URL}/{model_id}"
-
-# Model-specific parameters for different NVIDIA NIM image generation models
-# FLUX models have different API requirements than Stable Diffusion models
-
-STABLE_DIFFUSION_DEFAULTS = {
-    "cfg_scale": 5,
-    "aspect_ratio": "1:1",  # Square images
-    "seed": 0,
-    "steps": 50,
-    "negative_prompt": ""
-}
-
-FLUX_DEFAULTS = {
-    "cfg_scale": 0,  # FLUX models require cfg_scale=0
-    "width": 1024,
-    "height": 1024,
-    "seed": 0,
-    "steps": 4,  # FLUX.1 Schnell max is 4, FLUX.1 Dev supports more
-}
-
-# Legacy alias for backward compatibility
-NVIDIA_DEFAULTS = STABLE_DIFFUSION_DEFAULTS
-
-
-def get_model_defaults(model_id: Optional[str]) -> dict:
-    """
-    Get the appropriate default parameters based on the model type.
-
-    Args:
-        model_id: Model identifier like 'black-forest-labs/flux.1-schnell'
-
-    Returns:
-        Dictionary of default parameters for the model
-    """
-    if model_id and "flux" in model_id.lower():
-        defaults = FLUX_DEFAULTS.copy()
-        # FLUX.1 Dev and Kontext support more steps
-        if "schnell" not in model_id.lower():
-            defaults["steps"] = 28  # Better quality for non-Schnell FLUX models
-        return defaults
-    return STABLE_DIFFUSION_DEFAULTS.copy()
-
-# Retry configuration
-RETRY_STATUS_CODES = {429, 408, 500, 502, 503, 504}
-MAX_RETRIES = 5
-INITIAL_BACKOFF_SECONDS = 1.0
-MAX_BACKOFF_SECONDS = 30.0
+    config = get_config()
+    base_url = config.nvidia.base_url.rstrip("/")
+    return f"{base_url}/{model_id}"
 
 
 async def _calculate_backoff(attempt: int, response: Optional[httpx.Response] = None) -> float:
     """Calculate backoff time with exponential increase and jitter."""
+    config = get_config()
+    retry_cfg = config.retry
+
     if response is not None:
         retry_after = response.headers.get("Retry-After")
         if retry_after:
@@ -100,9 +55,12 @@ async def _calculate_backoff(attempt: int, response: Optional[httpx.Response] = 
                 return float(retry_after)
             except ValueError:
                 pass
-    
-    backoff = min(INITIAL_BACKOFF_SECONDS * (2 ** attempt), MAX_BACKOFF_SECONDS)
-    jitter = backoff * 0.1 * random.random()
+
+    backoff = min(
+        retry_cfg.initial_backoff_seconds * (2 ** attempt),
+        retry_cfg.max_backoff_seconds
+    )
+    jitter = backoff * retry_cfg.jitter_factor * random.random()
     return backoff + jitter
 
 
@@ -158,49 +116,53 @@ async def _make_nvidia_request(
 ) -> Tuple[int, Dict]:
     """
     Make a request to NVIDIA API with retry logic.
-    
+
     Returns:
         Tuple of (status_code, response_body)
     """
+    config = get_config()
+    max_retries = config.retry.max_retries
+    retry_status_codes = set(config.retry.retry_status_codes)
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
-    
+
     last_exception: Optional[Exception] = None
     last_response: Optional[httpx.Response] = None
-    
+
     async with httpx.AsyncClient(timeout=timeout) as client:
-        for attempt in range(MAX_RETRIES):
+        for attempt in range(max_retries):
             try:
                 response = await client.post(url, headers=headers, json=payload)
-                
+
                 # Return immediately on success or non-retriable error
-                if response.status_code not in RETRY_STATUS_CODES:
+                if response.status_code not in retry_status_codes:
                     try:
                         return response.status_code, response.json()
                     except Exception:
                         return response.status_code, {"error": response.text}
-                
+
                 # Retriable status code
                 last_response = response
                 backoff = await _calculate_backoff(attempt, response)
                 logger.warning(
                     f"NVIDIA API returned {response.status_code}, "
-                    f"attempt {attempt + 1}/{MAX_RETRIES}, backing off {backoff:.2f}s"
+                    f"attempt {attempt + 1}/{max_retries}, backing off {backoff:.2f}s"
                 )
                 await asyncio.sleep(backoff)
-                
+
             except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout) as e:
                 last_exception = e
                 backoff = await _calculate_backoff(attempt)
                 logger.warning(
                     f"NVIDIA API connection error: {e}, "
-                    f"attempt {attempt + 1}/{MAX_RETRIES}, backing off {backoff:.2f}s"
+                    f"attempt {attempt + 1}/{max_retries}, backing off {backoff:.2f}s"
                 )
                 await asyncio.sleep(backoff)
-    
+
     # All retries exhausted
     if last_response is not None:
         try:
@@ -208,9 +170,15 @@ async def _make_nvidia_request(
         except Exception:
             return last_response.status_code, {"error": last_response.text}
     elif last_exception is not None:
-        raise ImageGenerationError(f"NVIDIA API request failed after {MAX_RETRIES} retries: {last_exception}")
+        raise ImageGenerationError(
+            f"NVIDIA API request failed after {max_retries} retries: {last_exception}. "
+            f"Tip: You can switch to LiteLLM provider by setting IMAGE_PROVIDER=litellm"
+        )
     else:
-        raise ImageGenerationError(f"NVIDIA API request failed after {MAX_RETRIES} retries")
+        raise ImageGenerationError(
+            f"NVIDIA API request failed after {max_retries} retries. "
+            f"Tip: You can switch to LiteLLM provider by setting IMAGE_PROVIDER=litellm"
+        )
 
 
 async def generate_image_nvidia_raw(
@@ -231,8 +199,8 @@ async def generate_image_nvidia_raw(
 
     Args:
         prompt: Text description for image generation
-        api_key: NVIDIA API key (defaults to NVIDIA_API_KEY env var)
-        api_url: NVIDIA API URL (defaults to NVIDIA_IMAGE_GEN_URL env var)
+        api_key: NVIDIA API key (defaults to config)
+        api_url: NVIDIA API URL (defaults to config-based URL from model_id)
         model_id: Model identifier to determine parameter format (e.g., 'black-forest-labs/flux.1-schnell')
         timeout: Request timeout in seconds
         fallback_on_404: If True, try medium model when large SD model returns 404
@@ -244,13 +212,20 @@ async def generate_image_nvidia_raw(
     Raises:
         ImageGenerationError: On API errors or missing image data
     """
-    key = api_key or NVIDIA_API_KEY
-    url = api_url or NVIDIA_INVOKE_URL
+    config = get_config()
+    key = api_key or config.nvidia.api_key
+    url = api_url or os.getenv("NVIDIA_IMAGE_GEN_URL")
 
     if not key:
-        raise ImageGenerationError("NVIDIA_API_KEY environment variable is not set")
+        raise ImageGenerationError(
+            "NVIDIA_API_KEY is not set. "
+            "Consider using LiteLLM provider (IMAGE_PROVIDER=litellm) instead."
+        )
     if not url:
-        raise ImageGenerationError("NVIDIA_IMAGE_GEN_URL environment variable is not set")
+        raise ImageGenerationError(
+            "NVIDIA_IMAGE_GEN_URL is not set. "
+            "Consider using LiteLLM provider (IMAGE_PROVIDER=litellm) instead."
+        )
 
     # Determine if this is a FLUX model
     is_flux = model_id and "flux" in model_id.lower()
@@ -297,7 +272,10 @@ async def generate_image_nvidia_raw(
     # Check for errors
     if status_code != 200:
         error_msg = response_body.get("error", response_body.get("detail", str(response_body)))
-        raise ImageGenerationError(f"NVIDIA API returned {status_code}: {error_msg}")
+        raise ImageGenerationError(
+            f"NVIDIA API returned {status_code}: {error_msg}. "
+            f"Tip: You can switch to LiteLLM provider by setting IMAGE_PROVIDER=litellm"
+        )
     
     # Extract and decode image
     try:
@@ -331,14 +309,13 @@ async def generate_menu_item_image_nvidia(item: Dict, session_config: dict = Non
     item_name = item.get('name', 'Unknown')
     description = item.get('description', '')
 
-    # Debug: Log incoming session_config
-    logger.info(f"[DEBUG] generate_menu_item_image_nvidia called with session_config={session_config}")
+    logger.info(f"generate_menu_item_image_nvidia called with session_config={session_config}")
 
     # Get model from session config or fall back to environment variable
     model_id = None
     if session_config:
         model_id = session_config.get('image_gen_model')
-        logger.info(f"[DEBUG] Extracted model_id from session_config: {model_id}")
+        logger.info(f"Extracted model_id from session_config: {model_id}")
 
     # Determine the API URL
     if model_id:
@@ -347,14 +324,14 @@ async def generate_menu_item_image_nvidia(item: Dict, session_config: dict = Non
         logger.info(f"Using model from session config: {model_id} -> {api_url}")
     else:
         # Fall back to environment variable
-        api_url = NVIDIA_INVOKE_URL
+        api_url = os.getenv("NVIDIA_IMAGE_GEN_URL")
         logger.info(f"Using default NVIDIA URL from environment: {api_url}")
 
     # Create prompt for the menu item
     prompt = f"Create a high-quality, appetizing photo of this menu item: {item_name}. Description: {description}"
 
-    # Get model-specific parameters
-    model_params = get_model_defaults(model_id)
+    # Get model-specific parameters from config
+    model_params = get_nvidia_model_params(model_id or "")
     logger.info(f"Generating image with NVIDIA API for item: {item_name} using params: {model_params}")
 
     try:

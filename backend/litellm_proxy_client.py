@@ -18,7 +18,7 @@ import json
 import logging
 import random
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
@@ -602,4 +602,3 @@ async def check_proxy_health(
             raise ProxyClientError(f"LiteLLM proxy at {base} is not reachable or not responding")
         
         return result
-

@@ -287,7 +287,7 @@ async def generate_image_nvidia_raw(
         raise ImageGenerationError(f"Failed to decode image: {e}")
 
 
-async def generate_menu_item_image_nvidia(item: Dict, session_config: dict = None) -> str:
+async def generate_menu_item_image_nvidia(item: Dict, session_config: Optional[dict] = None) -> str:
     """
     Generate an image using NVIDIA NIM API.
 
@@ -308,11 +308,13 @@ async def generate_menu_item_image_nvidia(item: Dict, session_config: dict = Non
     """
     item_name = item.get('name', 'Unknown')
     description = item.get('description', '')
+    output_dir = (session_config or {}).get("output_dir", IMAGE_SAVE_DIR)
+    output_filename = (session_config or {}).get("output_filename")
 
     logger.info(f"generate_menu_item_image_nvidia called with session_config={session_config}")
 
     # Get model from session config or fall back to environment variable
-    model_id = None
+    model_id: Optional[str] = None
     if session_config:
         model_id = session_config.get('image_gen_model')
         logger.info(f"Extracted model_id from session_config: {model_id}")
@@ -320,7 +322,7 @@ async def generate_menu_item_image_nvidia(item: Dict, session_config: dict = Non
     # Determine the API URL
     if model_id:
         # Build URL from model ID
-        api_url = build_nvidia_url(model_id)
+        api_url: Optional[str] = build_nvidia_url(model_id)
         logger.info(f"Using model from session config: {model_id} -> {api_url}")
     else:
         # Fall back to environment variable
@@ -344,8 +346,9 @@ async def generate_menu_item_image_nvidia(item: Dict, session_config: dict = Non
         )
 
         # Save locally
-        filename = sanitize_filename(item_name) + ".png"
-        filepath = os.path.join(IMAGE_SAVE_DIR, filename)
+        filename = output_filename or (sanitize_filename(item_name) + ".png")
+        os.makedirs(output_dir, exist_ok=True)
+        filepath = os.path.join(output_dir, filename)
 
         async with aiofiles.open(filepath, mode='wb') as f:
             await f.write(image_data)

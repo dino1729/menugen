@@ -47,7 +47,7 @@ class NvidiaModelConfig:
 class NvidiaConfig:
     """NVIDIA provider configuration."""
     base_url: str = "https://ai.api.nvidia.com/v1/genai"
-    api_key: Optional[str] = None
+    api_key: Optional[str] = field(default=None, repr=False)
     models: Dict[str, NvidiaModelConfig] = field(default_factory=dict)
 
 
@@ -56,7 +56,7 @@ class AppConfig:
     """Main application configuration."""
     # API endpoints (using OPENAI_* prefix for compatibility)
     openai_base_url: str = "http://localhost:4000"
-    openai_api_key: str = ""
+    openai_api_key: str = field(default="", repr=False)
 
     # Default models
     vision_model: str = "gemini-3.5-flash"
@@ -171,7 +171,7 @@ def load_config() -> AppConfig:
     # Environment variable overrides (highest priority)
     # Handle OPENAI_BASE_URL with or without /v1 suffix
     base_url = os.getenv("OPENAI_BASE_URL", config.openai_base_url)
-    config.openai_base_url = base_url.rstrip("/").rstrip("/v1").rstrip("/")
+    config.openai_base_url = base_url.rstrip("/").removesuffix("/v1").rstrip("/")
 
     config.openai_api_key = os.getenv("OPENAI_API_KEY", config.openai_api_key)
 

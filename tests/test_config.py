@@ -7,9 +7,7 @@ Tests cover:
 - Helper functions
 - Config integration with actual config.json
 """
-import json
 import os
-from pathlib import Path
 
 import pytest
 
@@ -58,6 +56,17 @@ class TestAppConfigDefaults:
         assert cfg.text_models == []
         assert cfg.image_models == []
         assert cfg.video_models == []
+
+    def test_repr_does_not_expose_api_keys(self):
+        cfg = AppConfig(openai_api_key="super-secret")
+        cfg.nvidia.api_key = "nvidia-secret"
+        cfg.nvidia_nim_api_key = "nim-secret"
+
+        rendered = repr(cfg)
+
+        assert "super-secret" not in rendered
+        assert "nvidia-secret" not in rendered
+        assert "nim-secret" not in rendered
 
 
 class TestLiteLLMModelReconciliation:
@@ -245,7 +254,8 @@ class TestConfigEnvironmentOverride:
         # The config should have loaded the env var
         env_url = os.getenv("OPENAI_BASE_URL")
         if env_url:
-            assert app_config.openai_base_url == env_url
+            expected = env_url.rstrip("/").removesuffix("/v1").rstrip("/")
+            assert app_config.openai_base_url == expected
 
     def test_vision_model_from_env(self, app_config):
         """Test that VISION_MODEL env var is respected."""
@@ -258,6 +268,14 @@ class TestConfigEnvironmentOverride:
         env_provider = os.getenv("IMAGE_PROVIDER")
         if env_provider:
             assert app_config.image_provider == env_provider
+
+    def test_base_url_port_ending_in_one_is_preserved(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_BASE_URL", "http://localhost:4001")
+
+        cfg = load_config()
+
+        assert cfg.openai_base_url == "http://localhost:4001"
+        assert get_base_url_with_v1() == "http://localhost:4001/v1"
 
 
 class TestConfigJsonContent:

@@ -170,7 +170,9 @@ class TestUploadEndpoints:
     async def test_upload_menu_requires_file(self):
         """Test that /upload_menu/ requires a file."""
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post("/upload_menu/")
+            response = await client.post(
+                "/upload_menu/", headers={"X-MenuGen-Request": "1"}
+            )
             # Should return 422 Unprocessable Entity for missing file
             assert response.status_code == 422
 
@@ -178,7 +180,9 @@ class TestUploadEndpoints:
     async def test_parse_menu_only_requires_file(self):
         """Test that /parse_menu_only/ requires a file."""
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post("/parse_menu_only/")
+            response = await client.post(
+                "/parse_menu_only/", headers={"X-MenuGen-Request": "1"}
+            )
             # Should return 422 Unprocessable Entity for missing file
             assert response.status_code == 422
 
@@ -187,8 +191,8 @@ class TestCORSConfiguration:
     """Tests for CORS configuration."""
 
     @pytest.mark.asyncio
-    async def test_cors_allows_any_origin(self):
-        """Test that CORS allows requests from any origin."""
+    async def test_cors_allows_local_frontend_origin(self):
+        """Test that CORS allows the trusted local frontend."""
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.options(
                 "/config",

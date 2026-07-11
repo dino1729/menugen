@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 import os
 from dotenv import load_dotenv
 
@@ -5,28 +6,32 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import asyncio
+from contextlib import asynccontextmanager
+from io import BytesIO
 import logging
+import re
 import uuid
 from typing import Optional
 
-from fastapi import FastAPI, UploadFile, WebSocket, WebSocketDisconnect, Request, Form
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 # Import config module for centralized configuration
 from config import get_config, load_config, validate_litellm_connectivity
 
-# Import the custom exception and utilities
-from client_utils import ImageGenerationError, clear_images_folder as clear_images_util
+# Import the custom image-generation exception
+from client_utils import IMAGE_SAVE_DIR, ImageGenerationError, sanitize_filename
 
 # Import provider-specific implementations
 from litellm_client import (
     parse_menu_image_litellm,
     simplify_menu_item_description_litellm,
-    generate_menu_item_image_litellm
+    generate_menu_item_image_litellm,
 )
-from nvidia_image_generation import generate_menu_item_image_nvidia 
+from nvidia_image_generation import generate_menu_item_image_nvidia
 
 # Logging setup
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -38,17 +43,17 @@ logger = logging.getLogger("menugen.main")
 
 
 # Wrapper functions to route to appropriate provider (with session config support)
-async def parse_menu_image(image_content: bytes, session_config: dict = None):
+async def parse_menu_image(image_content: bytes, session_config: Optional[dict] = None):
     """Route menu image parsing to LiteLLM with optional session config."""
     return await parse_menu_image_litellm(image_content, session_config)
 
 
-async def simplify_menu_item_description(item, session_config: dict = None):
+async def simplify_menu_item_description(item, session_config: Optional[dict] = None):
     """Route description simplification to LiteLLM with optional session config."""
     return await simplify_menu_item_description_litellm(item, session_config)
 
 
-async def generate_menu_item_image(item, session_config: dict = None):
+async def generate_menu_item_image(item, session_config: Optional[dict] = None):
     """Route image generation based on session configuration or global default."""
     config = get_config()
     provider = (session_config or {}).get("image_provider", config.image_provider)
@@ -61,36 +66,150 @@ async def generate_menu_item_image(item, session_config: dict = None):
         return await generate_menu_item_image_litellm(item, session_config)
 
 
-app = FastAPI(title="MenuGen API", description="Menu parsing and illustration API")
+TRUSTED_REQUEST_VALUE = "1"
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif"}
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_IMAGE_PIXELS = 40_000_000
+DEFAULT_ALLOWED_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("MENUGEN_ALLOWED_ORIGINS", ",".join(DEFAULT_ALLOWED_ORIGINS)).split(",")
+    if origin.strip()
+]
+
+
+def require_trusted_request(
+    x_menugen_request: Optional[str] = Header(None, alias="X-MenuGen-Request"),
+) -> None:
+    """Require the custom header used by the trusted local frontend."""
+    if x_menugen_request != TRUSTED_REQUEST_VALUE:
+        raise HTTPException(status_code=403, detail="Trusted MenuGen request required")
+
+
+def require_supported_image(file: UploadFile) -> None:
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=415, detail="Upload a JPEG, PNG, or GIF image")
+
+
+async def read_limited_upload(file: UploadFile) -> bytes:
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Image must be 10 MB or smaller")
+    return content
+
+
+def normalize_image(content: bytes) -> bytes:
+    """Validate an uploaded image and normalize it to a bounded JPEG payload."""
+    try:
+        with Image.open(BytesIO(content)) as image:
+            image.verify()
+        with Image.open(BytesIO(content)) as image:
+            if image.width * image.height > MAX_IMAGE_PIXELS:
+                raise HTTPException(status_code=413, detail="Image dimensions are too large")
+            normalized = ImageOps.exif_transpose(image).convert("RGB")
+            output = BytesIO()
+            normalized.save(output, format="JPEG", quality=90)
+            return output.getvalue()
+    except HTTPException:
+        raise
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid image") from exc
+
+
+def validated_choice(
+    value: Optional[str], default: str, allowed: list[str], label: str
+) -> str:
+    selected = value or default
+    allowed_values = set(allowed) | {default}
+    if selected not in allowed_values:
+        raise HTTPException(status_code=422, detail=f"Unsupported {label}: {selected}")
+    return selected
+
+
+def build_session_config(
+    *,
+    image_provider: Optional[str] = None,
+    vision_model: Optional[str] = None,
+    image_gen_model: Optional[str] = None,
+    video_gen_model: Optional[str] = None,
+    description_model: Optional[str] = None,
+    include_images: bool = True,
+) -> dict:
+    cfg = get_config()
+    config = {
+        "vision_model": validated_choice(
+            vision_model, cfg.vision_model, cfg.vision_models, "vision model"
+        ),
+        "description_model": validated_choice(
+            description_model, cfg.description_model, cfg.text_models, "description model"
+        ),
+    }
+    if not include_images:
+        return config
+
+    provider = (image_provider or cfg.image_provider).lower()
+    if provider not in {"litellm", "nvidia"}:
+        raise HTTPException(status_code=422, detail=f"Unsupported image provider: {provider}")
+    if provider == "nvidia" and not cfg.nvidia.api_key:
+        raise HTTPException(status_code=422, detail="NVIDIA provider is not configured")
+
+    if provider == "nvidia":
+        image_models = list(cfg.nvidia.models)
+        if not image_models:
+            raise HTTPException(status_code=422, detail="No NVIDIA image models are configured")
+        default_image_model = image_models[0]
+    else:
+        image_models = cfg.image_models
+        default_image_model = cfg.image_gen_model
+    config.update(
+        {
+            "image_provider": provider,
+            "image_gen_model": validated_choice(
+                image_gen_model, default_image_model, image_models, "image model"
+            ),
+            "video_gen_model": validated_choice(
+                video_gen_model, cfg.video_gen_model, cfg.video_models, "video model"
+            ),
+        }
+    )
+    return config
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Load configuration and fail fast when the required proxy is unavailable."""
+    logger.info("Starting MenuGen backend...")
+    load_config()
+    try:
+        await validate_litellm_connectivity()
+        logger.info("Startup validation passed - LiteLLM proxy is reachable")
+    except RuntimeError as exc:
+        logger.critical(f"Startup validation FAILED: {exc}")
+        raise
+    yield
+
+
+app = FastAPI(
+    title="MenuGen API",
+    description="Menu parsing and illustration API",
+    lifespan=lifespan,
+)
 
 # Allow CORS for frontend dev
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-MenuGen-Request"],
 )
 
 # Serve static images from /images
 app.mount("/images", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "data", "images")), name="images")
 
 # In-memory session-to-connection mapping (for demo; not for prod)
-sessions = {}
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Validate LiteLLM connectivity on startup (fail-fast)."""
-    logger.info("Starting MenuGen backend...")
-    load_config()  # Load configuration first
-
-    try:
-        await validate_litellm_connectivity()
-        logger.info("Startup validation passed - LiteLLM proxy is reachable")
-    except RuntimeError as e:
-        logger.critical(f"Startup validation FAILED: {e}")
-        raise  # This will prevent the app from starting
+sessions: dict[str, WebSocket] = {}
+jobs: dict[str, asyncio.Task] = {}
 
 
 @app.get("/")
@@ -249,12 +368,12 @@ async def get_models():
 @app.post("/upload_menu/")
 async def upload_menu(
     file: UploadFile,
-    request: Request,
     image_provider: Optional[str] = Form(None),
     vision_model: Optional[str] = Form(None),
     image_gen_model: Optional[str] = Form(None),
     video_gen_model: Optional[str] = Form(None),
-    description_model: Optional[str] = Form(None)
+    description_model: Optional[str] = Form(None),
+    _: None = Depends(require_trusted_request),
 ):
     """
     Upload a menu image and start processing with optional model/provider overrides.
@@ -270,31 +389,48 @@ async def upload_menu(
     logger.info(f"Received file upload: filename={file.filename}, content_type={file.content_type}")
     logger.info(f"Provider settings: image_provider={image_provider}, vision={vision_model}, image_gen={image_gen_model}")
 
-    content = await file.read()
+    require_supported_image(file)
+    content = normalize_image(await read_limited_upload(file))
 
     session_id = str(uuid.uuid4())
     logger.info(f"Generated session_id={session_id} for upload.")
 
-    # Store model preferences with session (use config defaults)
-    cfg = get_config()
-    session_config = {
-        "image_provider": image_provider or cfg.image_provider,
-        "vision_model": vision_model or cfg.vision_model,
-        "image_gen_model": image_gen_model or cfg.image_gen_model,
-        "video_gen_model": video_gen_model or cfg.video_gen_model,
-        "description_model": description_model or cfg.description_model,
-    }
+    session_config = build_session_config(
+        image_provider=image_provider,
+        vision_model=vision_model,
+        image_gen_model=image_gen_model,
+        video_gen_model=video_gen_model,
+        description_model=description_model,
+    )
     
-    asyncio.create_task(process_menu(session_id, content, session_config))
+    task = asyncio.create_task(process_menu(session_id, content, session_config))
+    jobs[session_id] = task
     logger.info(f"Started background task for session_id={session_id}.")
     return JSONResponse(content={"status": "processing", "sessionId": session_id})
+
+
+@app.delete("/sessions/{session_id}")
+async def cancel_session(
+    session_id: str,
+    _: None = Depends(require_trusted_request),
+):
+    task = jobs.pop(session_id, None)
+    if task and not task.done():
+        task.cancel()
+    websocket = sessions.get(session_id)
+    if websocket:
+        try:
+            await websocket.close(code=1000, reason="Generation cancelled")
+        except RuntimeError:
+            pass
+    return {"status": "cancelled"}
 
 @app.post("/parse_menu_only/")
 async def parse_menu_only(
     file: UploadFile,
-    request: Request,
     vision_model: Optional[str] = Form(None),
-    description_model: Optional[str] = Form(None)
+    description_model: Optional[str] = Form(None),
+    _: None = Depends(require_trusted_request),
 ):
     """
     Parse menu image only (no image generation) with optional model overrides.
@@ -307,14 +443,14 @@ async def parse_menu_only(
     logger.info(f"Received file for parsing only: filename={file.filename}, content_type={file.content_type}")
     logger.info(f"Model settings: vision={vision_model}, description={description_model}")
 
-    content = await file.read()
+    require_supported_image(file)
+    content = normalize_image(await read_limited_upload(file))
 
-    # Create session config using config defaults
-    cfg = get_config()
-    session_config = {
-        "vision_model": vision_model or cfg.vision_model,
-        "description_model": description_model or cfg.description_model,
-    }
+    session_config = build_session_config(
+        vision_model=vision_model,
+        description_model=description_model,
+        include_images=False,
+    )
     
     try:
         logger.info("Calling parse_menu_image for parsing only.")
@@ -356,27 +492,36 @@ async def parse_menu_only(
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     logger.info(f"WebSocket connection attempt for session_id={session_id}.")
+    origin = websocket.headers.get("origin")
+    if origin not in ALLOWED_ORIGINS:
+        await websocket.close(code=1008, reason="Untrusted origin")
+        return
+    if session_id not in jobs:
+        await websocket.close(code=1008, reason="Unknown session")
+        return
     await websocket.accept()
     sessions[session_id] = websocket
     logger.info(f"WebSocket accepted and registered for session_id={session_id}.")
     try:
         while True:
-            await asyncio.sleep(10)  # Keep connection alive
+            await websocket.receive_text()
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for session_id={session_id}.")
-        sessions.pop(session_id, None)
     except Exception as e:
         logger.error(f"WebSocket error for session_id={session_id}: {e}")
-        sessions.pop(session_id, None)
+    finally:
+        if sessions.get(session_id) is websocket:
+            sessions.pop(session_id, None)
 
-def safe_send_json(websocket, data):
+async def safe_send_json(websocket, data):
     try:
         logger.info(f"Sending data over WebSocket: {data}")
-        return asyncio.create_task(websocket.send_json(data))
+        await websocket.send_json(data)
     except Exception as e:
         logger.error(f"Send error: {e}")
+        raise
 
-async def process_menu(session_id, image_content, session_config: dict = None):
+async def process_menu(session_id, image_content, session_config: Optional[dict] = None):
     """
     Process menu with optional session configuration for model/provider overrides.
     
@@ -389,8 +534,9 @@ async def process_menu(session_id, image_content, session_config: dict = None):
     if session_config:
         logger.info(f"Using session config: {session_config}")
 
-    # Clear images folder before generating new images
-    clear_images_util()
+    safe_session_id = re.sub(r"[^A-Za-z0-9_-]", "", session_id)
+    session_output_dir = os.path.join(IMAGE_SAVE_DIR, safe_session_id)
+    os.makedirs(session_output_dir, exist_ok=True)
 
     # Wait for WebSocket connection to be established
     websocket = None
@@ -408,7 +554,7 @@ async def process_menu(session_id, image_content, session_config: dict = None):
 
     try:
         # Step 1: Parse menu
-        await safe_send_json(websocket, {"type": "status", "message": f"Parsing menu..."})
+        await safe_send_json(websocket, {"type": "status", "message": "Parsing menu..."})
         logger.info(f"Calling parse_menu_image for session_id={session_id}.")
         parsed_menu = await parse_menu_image(image_content, session_config)
         logger.info(f"Menu parsed for session_id={session_id}: {parsed_menu}")
@@ -465,23 +611,29 @@ async def process_menu(session_id, image_content, session_config: dict = None):
                 return None
 
             item_name = item.get('name', f'Unknown Item {idx+1}')
+            output_filename = f"{idx:03d}_{sanitize_filename(item_name) or 'item'}.png"
+            item_session_config = {
+                **(session_config or {}),
+                "output_dir": session_output_dir,
+                "output_filename": output_filename,
+            }
 
             async with semaphore:
                 logger.info(f"Generating image for item {item_name} (session_id={session_id}, idx={idx}) using {provider}.")
                 await safe_send_json(websocket, {"type": "status", "message": f"Generating image for {item_name}..."})
                 try:
-                    local_filename = await generate_menu_item_image(item, session_config)
+                    local_filename = await generate_menu_item_image(item, item_session_config)
                     logger.info(f"Image generated and saved locally as {local_filename} for item {item_name} (session_id={session_id}).")
-                    image_static_url = f"/images/{local_filename}"
-                    await safe_send_json(websocket, {"type": "image_generated", "item": item_name, "url": image_static_url})
+                    image_static_url = f"/images/{safe_session_id}/{local_filename}"
+                    await safe_send_json(websocket, {"type": "image_generated", "index": idx, "item": item_name, "url": image_static_url})
                     return {"success": True, "item": item_name, "url": image_static_url}
                 except ImageGenerationError as img_err:
                     logger.error(f"Image generation failed permanently for item {item_name} (session_id={session_id}): {img_err}")
-                    await safe_send_json(websocket, {"type": "image_generation_failed", "item": item_name, "message": str(img_err)})
+                    await safe_send_json(websocket, {"type": "image_generation_failed", "index": idx, "item": item_name, "message": str(img_err)})
                     return {"success": False, "item": item_name, "error": str(img_err)}
                 except Exception as e:
                     logger.error(f"Unexpected error during image generation for item {item_name} (session_id={session_id}): {e}")
-                    await safe_send_json(websocket, {"type": "image_error", "item": item_name, "message": f"Unexpected error: {str(e)}"})
+                    await safe_send_json(websocket, {"type": "image_error", "index": idx, "item": item_name, "message": f"Unexpected error: {str(e)}"})
                     return {"success": False, "item": item_name, "error": str(e)}
 
         # Launch all image generation tasks in parallel (limited by semaphore)
@@ -503,4 +655,10 @@ async def process_menu(session_id, image_content, session_config: dict = None):
             logger.error(f"WebSocket for session {session_id} is closed or invalid, cannot send final error.")
     finally:
         logger.info(f"Cleaning up session {session_id}.")
+        if websocket and websocket.client_state.name == "CONNECTED":
+            try:
+                await websocket.close(code=1000)
+            except RuntimeError:
+                pass
         sessions.pop(session_id, None)
+        jobs.pop(session_id, None)

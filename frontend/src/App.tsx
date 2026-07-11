@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import './App.css';
 
 interface MenuItem {
+  id?: string;
   name: string;
   description?: string;
   imageUrl?: string;
@@ -16,6 +17,7 @@ const normalizeName = (s: string) => s.trim().toLowerCase();
 // Define constants for backend communication
 const EFFECTIVE_HOSTNAME = window.location.hostname;
 const BACKEND_PORT = '8005';
+const TRUSTED_REQUEST_HEADERS = { 'X-MenuGen-Request': '1' };
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif']);
 
@@ -53,27 +55,11 @@ const buildImageUrl = (raw: string): string => {
   if (raw.startsWith('/')) return BACKEND_BASE_URL + raw;
   return BACKEND_BASE_URL + '/' + raw;
 };
-// Fallback loader: download image yourself and turn it into an object-URL.
-const downloadAsObjectURL = async (remoteUrl: string): Promise<string> => {
-  try {
-    console.log('[FETCH] start →', remoteUrl);
-    const res = await fetch(remoteUrl, { mode: 'cors' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const blob = await res.blob();
-    const objUrl = URL.createObjectURL(blob);
-    console.log('[FETCH] success → objectURL:', objUrl);
-    return objUrl;
-  } catch (e) {
-    console.error('[FETCH] FAILED', e);
-    throw e;
-  }
-};
-
 function App() {
   // Theme state - default to 'light'
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     // Check local storage for saved theme preference
-    const savedTheme = localStorage.getItem('menugen-theme');
+    const savedTheme = window.localStorage.getItem('menugen-theme');
     // Return saved theme or default to 'light'
     return (savedTheme === 'dark' ? 'dark' : 'light') as 'light' | 'dark';
   });
@@ -83,7 +69,7 @@ function App() {
     const newTheme = theme === 'light' ? 'dark' : 'light';
     setTheme(newTheme);
     // Save to local storage
-    localStorage.setItem('menugen-theme', newTheme);
+    window.localStorage.setItem('menugen-theme', newTheme);
   };
 
   // Configuration and model selection state
@@ -166,8 +152,12 @@ function App() {
   const [isParseOnly, setIsParseOnly] = useState<boolean>(false);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null); // To display the uploaded menu image
   const [progress, setProgress] = useState<number>(0); // For progress bar
-  const [totalItems, setTotalItems] = useState<number>(0); // Total items for progress calculation
   const wsRef = useRef<WebSocket | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const generationFailureCountRef = useRef(0);
+  const totalItemsRef = useRef(0);
+  const processedItemsRef = useRef(0);
+  const sessionFinishedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null); // Ref for the file input
   // New: Track if generation is in progress (WebSocket open and not done)
   const [isGenerating, setIsGenerating] = useState(false);
@@ -193,7 +183,11 @@ function App() {
     setErrors([]);
     setIsParseOnly(false);
     setProgress(0);
-    setTotalItems(0);
+    generationFailureCountRef.current = 0;
+    totalItemsRef.current = 0;
+    processedItemsRef.current = 0;
+    sessionIdRef.current = null;
+    sessionFinishedRef.current = true;
     if (clearFile) {
         setFile(null);
         setUploadedImageUrl(null);
@@ -268,12 +262,15 @@ function App() {
       setProgress(5); // Initial progress
       const response = await fetch(`${API_ORIGIN}/upload_menu/`, {
         method: 'POST',
+        headers: TRUSTED_REQUEST_HEADERS,
         body: formData,
       });
       const data = await response.json();
       setStatus('Extracting menu items...');
       setProgress(15);
       if (data.sessionId) {
+        sessionIdRef.current = data.sessionId;
+        sessionFinishedRef.current = false;
         connectWebSocket(data.sessionId);
       } else {
         setStatus('Failed to start processing session.');
@@ -302,6 +299,7 @@ function App() {
       setProgress(10);
       const response = await fetch(`${API_ORIGIN}/parse_menu_only/`, {
         method: 'POST',
+        headers: TRUSTED_REQUEST_HEADERS,
         body: formData,
       });
       const data = await response.json();
@@ -314,7 +312,8 @@ function App() {
             .filter((item: any): item is { name: any; description?: any; section?: any } => 
               item && typeof item === 'object' && typeof item.name === 'string'
             )
-            .map((item: { name: any; description?: any; section?: any }) => ({
+            .map((item: { name: any; description?: any; section?: any }, index: number) => ({
+              id: String(index),
               name: String(item.name), // Ensure name is a string
               description: typeof item.description === 'string' ? item.description : '', // Default if not a string
               category: typeof item.section === 'string' ? item.section : 'Uncategorized', // Default if not a string
@@ -339,13 +338,24 @@ function App() {
     }
   };
 
-  const handleStopGenerating = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-      setIsGenerating(false);
-      setStatus('Generation stopped by user');
+  const handleStopGenerating = async () => {
+    const sessionId = sessionIdRef.current;
+    if (sessionId) {
+      try {
+        await fetch(`${API_ORIGIN}/sessions/${sessionId}`, {
+          method: 'DELETE',
+          headers: TRUSTED_REQUEST_HEADERS,
+        });
+      } catch (error) {
+        setErrors((prev: string[]) => [...prev, `Unable to cancel backend session: ${String(error)}`]);
+      }
     }
+    sessionFinishedRef.current = true;
+    wsRef.current?.close();
+    wsRef.current = null;
+    sessionIdRef.current = null;
+    setIsGenerating(false);
+    setStatus('Generation stopped by user');
   };
 
   const handleRefresh = () => {
@@ -358,13 +368,18 @@ function App() {
     const ws = new WebSocket(`${WS_ORIGIN}/ws/${sessionId}`);
     wsRef.current = ws;
     setIsGenerating(true);
+    const advanceGenerationProgress = () => {
+      processedItemsRef.current += 1;
+      if (totalItemsRef.current > 0) {
+        setProgress(30 + (processedItemsRef.current / totalItemsRef.current) * 70);
+      }
+    };
     ws.onopen = () => {
         setStatus('Connected. Waiting for results...');
         setProgress(20); // Progress update on connect
     }
     ws.onmessage = (event: MessageEvent) => {
       const msg = JSON.parse(event.data);
-      console.log("WebSocket message received:", msg); // Log all incoming messages
       switch (msg.type) {
         case 'status':
           setStatus(msg.message);
@@ -383,78 +398,78 @@ function App() {
         case 'menu_parsed':
           // Fix: Handle both dict and list for msg.data
           const items = Array.isArray(msg.data) ? msg.data : (msg.data.items || []);
-          setMenuItems(items.map((item: any) => ({ 
+          setMenuItems(items.map((item: any, index: number) => ({
+            id: String(index),
             name: item.name, 
             description: item.description, 
             category: item.section || 'Uncategorized' 
           })));
-          setTotalItems(items.length); // Set total items for progress calculation
+          totalItemsRef.current = items.length;
+          processedItemsRef.current = 0;
           // Show generation start immediately
           setStatus(`Generating images (0/${items.length})`);
           setProgress(30); // Progress after parsing
           break;
         case 'image_generated': {
           const rawName = msg.item;
-          const key = normalizeName(rawName);
-          const fallback = async (origUrl: string) => {
-            try {
-              const blobUrl = await downloadAsObjectURL(origUrl);
-              // store blob URL – will definitely load
-              setImages((prev: { [key: string]: string }) => ({ ...prev, [key]: blobUrl }));
-              setImageLoadStatus((prev: { [key: string]: 'loading'|'loaded'|'error' }) => ({ ...prev, [key]: 'loaded' }));
-            } catch {
-              setImageLoadStatus((prev: { [key: string]: 'loading'|'loaded'|'error' }) => ({ ...prev, [key]: 'error' }));
-              setErrors((prev: string[]) => [...prev, `Could not fetch image for ${rawName}`]);
-            }
-          };
-
+          const key = msg.index === undefined ? normalizeName(rawName) : String(msg.index);
           // mark loading
           setImageLoadStatus((prev: { [key: string]: 'loading'|'loaded'|'error' }) => ({ ...prev, [key]: 'loading' }));
 
           const finalUrl = buildImageUrl(msg.url);
-          console.log(`[IMG] direct attempt  key=«${key}»  url=`, finalUrl);
-
-          // Save the direct URL first
           setImages((prev: { [key: string]: string }) => ({ ...prev, [key]: finalUrl }));
-
-          // also try pre-fetching so we know early if the URL is bad
-          downloadAsObjectURL(finalUrl)
-            .then(() => console.log(`[CHECK] ${finalUrl} reachable`))
-            .catch(() => {
-              console.warn(`[CHECK] ${finalUrl} unreachable – switching to blob fallback`);
-              fallback(finalUrl);
-            });
-
-          // ...existing progress calculation...
+          advanceGenerationProgress();
           break;
         }
         case 'image_error':
-          setMenuItems((prev: MenuItem[]) => prev.map((item: MenuItem) => item.name === msg.item ? { ...item, error: msg.message } : item));
+          generationFailureCountRef.current += 1;
+          setMenuItems((prev: MenuItem[]) => prev.map((item: MenuItem) =>
+            (msg.index === undefined ? item.name === msg.item : item.id === String(msg.index))
+              ? { ...item, error: msg.message }
+              : item
+          ));
           setErrors((prev: string[]) => [...prev, `Image error for ${msg.item}: ${msg.message}`]);
           setImages((prev: { [key: string]: string }) => { // Still count error as "processed" for progress
-            const newImages = { ...prev, [msg.item]: 'error' }; // Mark as error processed
-            const processedCount = Object.keys(newImages).length;
-            const imageProgress = totalItems > 0 ? (processedCount / totalItems) * 70 : 0;
-            setProgress(30 + imageProgress);
-            return newImages;
+            const errorKey = msg.index === undefined ? normalizeName(msg.item) : String(msg.index);
+            return { ...prev, [errorKey]: 'error' };
           });
+          advanceGenerationProgress();
           break;
+        case 'image_generation_failed': {
+          generationFailureCountRef.current += 1;
+          const failureMessage = `Image generation failed for ${msg.item}: ${msg.message}`;
+          const failureKey = msg.index === undefined ? normalizeName(msg.item) : String(msg.index);
+          setMenuItems((prev: MenuItem[]) => prev.map(
+            (item: MenuItem) => (
+              msg.index === undefined ? item.name === msg.item : item.id === String(msg.index)
+            ) ? { ...item, error: msg.message } : item
+          ));
+          setErrors((prev: string[]) => [...prev, failureMessage]);
+          setImages((prev: { [key: string]: string }) => ({ ...prev, [failureKey]: 'error' }));
+          setStatus(failureMessage);
+          advanceGenerationProgress();
+          break;
+        }
         case 'error':
+          sessionFinishedRef.current = true;
           setErrors((prev: string[]) => [...prev, `Error: ${msg.message}`]);
           setStatus('Error occurred during processing');
           setProgress(0); // Reset progress on critical error
           setIsGenerating(false);
           break;
         case 'done':
-          setStatus('All images generated!');
+          sessionFinishedRef.current = true;
+          setStatus(
+            generationFailureCountRef.current > 0
+              ? 'Generation completed with errors'
+              : 'All images generated!'
+          );
           setProgress(100);
           setIsGenerating(false);
           
-          // Debug log the final images state
-          console.log("Final images state:", images);
           break;
         default:
-          console.log("Unknown WS message type:", msg.type);
+          console.warn("Unknown WebSocket message type:", msg.type);
       }
     };
     ws.onerror = (error) => {
@@ -465,9 +480,8 @@ function App() {
         setIsGenerating(false);
     };
     ws.onclose = (event) => {
-        console.log("WebSocket Closed:", event.reason, event.code);
         // Update status only if processing wasn't finished or errored out
-        if (progress < 100 && !status.toLowerCase().includes('error') && !status.toLowerCase().includes('failed')) {
+        if (!sessionFinishedRef.current) {
              setStatus('WebSocket closed unexpectedly');
              // Optionally reset progress or leave as is
         }
@@ -475,17 +489,6 @@ function App() {
     };
   };
 
-  // Add useEffect to log images whenever they change
-  useEffect(() => {
-    console.log("Images state updated (relative URLs):", images);
-    console.log("Total image count:", Object.keys(images).length);
-  }, [images]);
-
-  // Extra logging to see when image load-status changes
-  useEffect(() => {
-    console.log('imageLoadStatus changed ➜', imageLoadStatus);
-  }, [imageLoadStatus]);
-  
   // Group items by category for rendering
   const groupedMenuItems = menuItems.reduce((acc: { [key: string]: MenuItem[] }, item: MenuItem) => {
     const category = item.category || 'Uncategorized';
@@ -650,12 +653,12 @@ function App() {
                 <section key={category} className="menu-category">
                   <h3 className="category-title">{category}</h3>
                   <div className="menu-items-grid">
-                    {items.map((item: MenuItem) => {
-                      const key = normalizeName(item.name);
+                    {items.map((item: MenuItem, itemIndex: number) => {
+                      const key = item.id ?? normalizeName(item.name);
                       const imageUrl = images[key];
                       const hasImage = imageUrl && imageUrl !== 'error';
                       return (
-                        <div key={item.name} className="menu-item-card">
+                        <div key={item.id ?? `${item.name}-${itemIndex}`} className="menu-item-card">
                           {!isParseOnly && hasImage && (
                             <div className="menu-item-image-container">
                               <img

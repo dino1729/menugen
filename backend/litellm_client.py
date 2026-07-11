@@ -10,7 +10,7 @@ Configuration is loaded from config.py module.
 import base64
 import logging
 import os
-from typing import Dict
+from typing import Dict, Optional
 
 from config import get_config, get_base_url_with_v1
 from litellm_proxy_client import (
@@ -21,7 +21,7 @@ from litellm_proxy_client import (
     extract_image_bytes,
     ProxyClientError,
 )
-from client_utils import ImageGenerationError, save_image_locally
+from client_utils import IMAGE_SAVE_DIR, ImageGenerationError, sanitize_filename, save_image_locally
 
 logger = logging.getLogger("menugen.litellm_client")
 
@@ -69,7 +69,7 @@ async def chat_completions_with_nim_fallback(
             ) from primary_error
 
 
-async def parse_menu_image_litellm(image_content: bytes, session_config: dict = None) -> Dict:
+async def parse_menu_image_litellm(image_content: bytes, session_config: Optional[dict] = None) -> Dict:
     """
     Parse menu image using LiteLLM (routing to configured proxy).
 
@@ -132,7 +132,7 @@ async def parse_menu_image_litellm(image_content: bytes, session_config: dict = 
         raise
 
 
-async def simplify_menu_item_description_litellm(item: Dict, session_config: dict = None) -> str:
+async def simplify_menu_item_description_litellm(item: Dict, session_config: Optional[dict] = None) -> str:
     """
     Simplify menu item description using LiteLLM.
 
@@ -203,7 +203,7 @@ async def simplify_menu_item_description_litellm(item: Dict, session_config: dic
         return description.strip().strip('\"') if description else ""
 
 
-async def generate_menu_item_image_litellm(item: Dict, session_config: dict = None) -> str:
+async def generate_menu_item_image_litellm(item: Dict, session_config: Optional[dict] = None) -> str:
     """
     Generate menu item image using LiteLLM (via Proxy).
 
@@ -223,6 +223,8 @@ async def generate_menu_item_image_litellm(item: Dict, session_config: dict = No
 
     # Use session config if provided, otherwise use config defaults
     image_gen_model = (session_config or {}).get("image_gen_model", config.image_gen_model)
+    output_dir = (session_config or {}).get("output_dir")
+    output_filename = (session_config or {}).get("output_filename")
 
     logger.info(f"Generating image with LiteLLM ({image_gen_model}) for: {item_name}")
 
@@ -242,14 +244,20 @@ async def generate_menu_item_image_litellm(item: Dict, session_config: dict = No
 
         if image_url and not image_url.startswith('data:'):
             # We have an HTTP URL, use the existing save function
-            local_filename = await save_image_locally(image_url, item_name)
+            local_filename = await save_image_locally(
+                image_url,
+                item_name,
+                output_dir=output_dir or IMAGE_SAVE_DIR,
+                output_filename=output_filename,
+            )
         else:
             # We have raw bytes, save directly
-            from client_utils import IMAGE_SAVE_DIR, sanitize_filename
             import aiofiles
 
-            filename = sanitize_filename(item_name) + ".png"
-            filepath = os.path.join(IMAGE_SAVE_DIR, filename)
+            filename = output_filename or (sanitize_filename(item_name) + ".png")
+            target_dir = output_dir or IMAGE_SAVE_DIR
+            os.makedirs(target_dir, exist_ok=True)
+            filepath = os.path.join(target_dir, filename)
 
             async with aiofiles.open(filepath, mode='wb') as f:
                 await f.write(image_bytes)

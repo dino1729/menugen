@@ -1,5 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, expect, test, vi, type Mock } from 'vitest';
 import App from './App';
 
 const configResponse = {
@@ -12,15 +13,15 @@ const configResponse = {
 };
 
 beforeEach(() => {
-  global.fetch = jest.fn(async () => ({
+  globalThis.fetch = vi.fn(async () => ({
     ok: true,
     json: async () => configResponse,
-  })) as jest.Mock;
+  })) as Mock;
 });
 
 test('advertises clipboard paste in the upload box', async () => {
   render(<App />);
-  await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+  await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
 
   expect(screen.getByText(/paste an image/i)).toBeInTheDocument();
   expect(screen.getByText(/Ctrl\/⌘ \+ V/i)).toBeInTheDocument();
@@ -28,7 +29,7 @@ test('advertises clipboard paste in the upload box', async () => {
 
 test('accepts an image pasted from the clipboard', async () => {
   render(<App />);
-  await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+  await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
   const pastedImage = new File(['image'], 'pasted-menu.png', { type: 'image/png' });
 
   fireEvent.paste(document, {
@@ -44,7 +45,7 @@ test('accepts an image pasted from the clipboard', async () => {
 
 test('rejects pasted image formats the backend does not support', async () => {
   render(<App />);
-  await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+  await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
   const pastedImage = new File(['image'], 'pasted-menu.webp', { type: 'image/webp' });
 
   fireEvent.paste(document, {

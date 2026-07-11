@@ -98,16 +98,16 @@ echo -e "\n${CYAN}Configuration:${NC}"
 if [ -f "$SCRIPT_DIR/.env" ]; then
     echo -e "  .env: ${GREEN}Present${NC}"
     # Show key config values (without revealing secrets)
-    if grep -q "IMAGE_PROVIDER" "$SCRIPT_DIR/.env" 2>/dev/null; then
-        IMG_PROVIDER=$(grep "IMAGE_PROVIDER" "$SCRIPT_DIR/.env" | cut -d'=' -f2)
+    IMG_PROVIDER=$(awk -F= '$1 == "IMAGE_PROVIDER" {print $2; exit}' "$SCRIPT_DIR/.env")
+    if [ -n "$IMG_PROVIDER" ]; then
         echo -e "  Image Provider: $IMG_PROVIDER"
     fi
-    if grep -q "LLM_MODEL" "$SCRIPT_DIR/.env" 2>/dev/null; then
-        LLM_MODEL=$(grep "LLM_MODEL" "$SCRIPT_DIR/.env" | cut -d'=' -f2)
+    LLM_MODEL=$(awk -F= '$1 == "LLM_MODEL" {print $2; exit}' "$SCRIPT_DIR/.env")
+    if [ -n "$LLM_MODEL" ]; then
         echo -e "  LLM Model: $LLM_MODEL"
     fi
-    if grep -q "IMAGE_GEN_MODEL" "$SCRIPT_DIR/.env" 2>/dev/null; then
-        IMG_MODEL=$(grep "IMAGE_GEN_MODEL" "$SCRIPT_DIR/.env" | cut -d'=' -f2)
+    IMG_MODEL=$(awk -F= '$1 == "IMAGE_GEN_MODEL" {print $2; exit}' "$SCRIPT_DIR/.env")
+    if [ -n "$IMG_MODEL" ]; then
         echo -e "  Image Gen Model: $IMG_MODEL"
     fi
 else

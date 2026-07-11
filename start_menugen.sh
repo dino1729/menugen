@@ -1,12 +1,13 @@
 #!/bin/bash
 # start_menugen.sh - Start the MenuGen application (backend + frontend)
-# This script replicates what docker-compose does but without Docker overhead
+# Runs the local FastAPI and Vite development servers.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$SCRIPT_DIR/backend"
 FRONTEND_DIR="$SCRIPT_DIR/frontend"
+VENV_DIR="$SCRIPT_DIR/.venv"
 PID_DIR="$SCRIPT_DIR/.pids"
 LOG_DIR="$SCRIPT_DIR/logs"
 
@@ -58,16 +59,16 @@ if [ "$BACKEND_RUNNING" = false ]; then
     
     cd "$SCRIPT_DIR"
 
-    # Check for virtual environment in backend directory
-    if [ -d "$BACKEND_DIR/venv" ]; then
-        echo "Activating backend virtual environment..."
-        source "$BACKEND_DIR/venv/bin/activate"
-    else
-        echo -e "${YELLOW}No virtual environment found. Creating one...${NC}"
-        python3 -m venv "$BACKEND_DIR/venv"
-        source "$BACKEND_DIR/venv/bin/activate"
+    # Recreate missing or stale virtual environments instead of trusting the directory alone.
+    if [ ! -x "$VENV_DIR/bin/python" ] || [ ! -x "$VENV_DIR/bin/uvicorn" ]; then
+        echo -e "${YELLOW}Creating or repairing the Python virtual environment...${NC}"
+        python3 -m venv --clear "$VENV_DIR"
+        source "$VENV_DIR/bin/activate"
         echo "Installing dependencies..."
         pip install -r requirements.txt
+    else
+        echo "Activating Python virtual environment..."
+        source "$VENV_DIR/bin/activate"
     fi
     
     # Check if root .env exists
@@ -84,7 +85,7 @@ if [ "$BACKEND_RUNNING" = false ]; then
     
     # Start uvicorn in background (use full path to venv's uvicorn for nohup)
     echo "Starting uvicorn server on port 8005..."
-    nohup "$BACKEND_DIR/venv/bin/uvicorn" --app-dir backend main:app --host 0.0.0.0 --port 8005 > "$LOG_DIR/backend.log" 2>&1 &
+    nohup "$VENV_DIR/bin/uvicorn" --app-dir backend main:app --host 127.0.0.1 --port 8005 > "$LOG_DIR/backend.log" 2>&1 &
     BACKEND_PID=$!
     echo "$BACKEND_PID" > "$PID_DIR/backend.pid"
     

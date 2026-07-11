@@ -50,6 +50,10 @@ class TestConfigEndpoint:
             assert "description_model" in data
             assert "image_gen_model" in data
             assert "video_gen_model" in data
+            assert data["fallbacks"] == {
+                "vision": app_config.nim_vision_fallback_model,
+                "text": app_config.nim_text_fallback_model,
+            }
 
     @pytest.mark.asyncio
     async def test_config_contains_whitelists(self, app_config):

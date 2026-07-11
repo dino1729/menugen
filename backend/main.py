@@ -115,6 +115,10 @@ async def get_config_endpoint():
         "description_model": cfg.description_model,
         "image_gen_model": cfg.image_gen_model,
         "video_gen_model": cfg.video_gen_model,
+        "fallbacks": {
+            "vision": cfg.nim_vision_fallback_model,
+            "text": cfg.nim_text_fallback_model,
+        },
         "openai_base_url": cfg.openai_base_url,
         "nvidia_available": bool(cfg.nvidia.api_key),
         "litellm_healthy": cfg.litellm_healthy,

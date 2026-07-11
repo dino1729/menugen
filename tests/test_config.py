@@ -41,6 +41,10 @@ class TestAppConfigDefaults:
         assert cfg.description_model == "gemini-3.5-flash"
         assert cfg.image_gen_model == "gemini-3-pro-image-preview"
         assert cfg.video_gen_model == "veo-3.1-generate-001"
+        assert cfg.nim_vision_fallback_model == "meta/llama-3.2-90b-vision-instruct"
+        assert cfg.nim_text_fallback_model == (
+            "mistralai/mistral-large-3-675b-instruct-2512"
+        )
 
     def test_default_image_provider(self):
         """Test default image provider."""

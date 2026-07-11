@@ -64,6 +64,14 @@ class AppConfig:
     image_gen_model: str = "gemini-3-pro-image-preview"
     video_gen_model: str = "veo-3.1-generate-001"
 
+    # Direct NVIDIA NIM fallback configuration
+    nvidia_nim_base_url: str = "https://integrate.api.nvidia.com/v1"
+    nvidia_nim_api_key: Optional[str] = field(default=None, repr=False)
+    nim_vision_fallback_model: str = "meta/llama-3.2-90b-vision-instruct"
+    nim_text_fallback_model: str = (
+        "mistralai/mistral-large-3-675b-instruct-2512"
+    )
+
     # Provider selection
     image_provider: str = "litellm"
 
@@ -123,6 +131,15 @@ def load_config() -> AppConfig:
             config.image_models = whitelists.get("image_models", [])
             config.video_models = whitelists.get("video_models", [])
 
+            # Load NVIDIA NIM fallback aliases
+            fallbacks = data.get("fallbacks", {})
+            config.nim_vision_fallback_model = fallbacks.get(
+                "vision_model", config.nim_vision_fallback_model
+            )
+            config.nim_text_fallback_model = fallbacks.get(
+                "text_model", config.nim_text_fallback_model
+            )
+
             # Load NVIDIA config
             nvidia_data = data.get("nvidia", {})
             config.nvidia.base_url = nvidia_data.get("base_url", config.nvidia.base_url)
@@ -163,6 +180,16 @@ def load_config() -> AppConfig:
     config.description_model = os.getenv("DESCRIPTION_MODEL", config.description_model)
     config.image_gen_model = os.getenv("IMAGE_GEN_MODEL", config.image_gen_model)
     config.video_gen_model = os.getenv("VIDEO_GEN_MODEL", config.video_gen_model)
+    config.nvidia_nim_base_url = os.getenv(
+        "NVIDIA_NIM_BASE_URL", config.nvidia_nim_base_url
+    ).rstrip("/")
+    config.nvidia_nim_api_key = os.getenv("NVIDIA_NIM_API_KEY")
+    config.nim_vision_fallback_model = os.getenv(
+        "NIM_VISION_FALLBACK_MODEL", config.nim_vision_fallback_model
+    )
+    config.nim_text_fallback_model = os.getenv(
+        "NIM_TEXT_FALLBACK_MODEL", config.nim_text_fallback_model
+    )
 
     # Provider selection
     config.image_provider = os.getenv("IMAGE_PROVIDER", config.image_provider).lower()

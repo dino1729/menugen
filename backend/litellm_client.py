@@ -4,7 +4,7 @@ LiteLLM Client for MenuGen Application.
 This module provides high-level functions for menu parsing, description generation,
 and image generation using the LiteLLM proxy via direct httpx calls.
 
-All calls go through the configured LiteLLM proxy endpoint, avoiding SDK bypass issues.
+Primary calls go through LiteLLM; failed chat calls retry once against NVIDIA NIM.
 Configuration is loaded from config.py module.
 """
 import base64
@@ -24,6 +24,49 @@ from litellm_proxy_client import (
 from client_utils import ImageGenerationError, save_image_locally
 
 logger = logging.getLogger("menugen.litellm_client")
+
+
+async def chat_completions_with_nim_fallback(
+    *,
+    primary_model: str,
+    fallback_model: str,
+    messages: list[dict],
+    **kwargs,
+) -> Dict:
+    """Call LiteLLM first, then retry once against NVIDIA NIM on failure."""
+    config = get_config()
+    try:
+        return await chat_completions(
+            model=primary_model,
+            messages=messages,
+            base_url=get_base_url_with_v1(),
+            api_key=config.openai_api_key,
+            **kwargs,
+        )
+    except ProxyClientError as primary_error:
+        if not config.nvidia_nim_api_key:
+            raise
+
+        logger.warning(
+            "Primary model %s failed; retrying with NVIDIA NIM model %s",
+            primary_model,
+            fallback_model,
+        )
+        try:
+            return await chat_completions(
+                model=fallback_model,
+                messages=messages,
+                base_url=config.nvidia_nim_base_url,
+                api_key=config.nvidia_nim_api_key,
+                **kwargs,
+            )
+        except ProxyClientError as fallback_error:
+            raise ProxyClientError(
+                f"Primary model {primary_model} failed and NVIDIA NIM fallback "
+                f"{fallback_model} also failed: {fallback_error}",
+                status_code=fallback_error.status_code,
+                response_body=fallback_error.response_body,
+            ) from primary_error
 
 
 async def parse_menu_image_litellm(image_content: bytes, session_config: dict = None) -> Dict:
@@ -68,14 +111,12 @@ async def parse_menu_image_litellm(image_content: bytes, session_config: dict = 
             }
         ]
 
-        base_url = get_base_url_with_v1()
-        logger.info(f"Calling LiteLLM proxy at {base_url}")
+        logger.info(f"Calling LiteLLM proxy at {get_base_url_with_v1()}")
 
-        response = await chat_completions(
-            model=vision_model,
+        response = await chat_completions_with_nim_fallback(
+            primary_model=vision_model,
+            fallback_model=config.nim_vision_fallback_model,
             messages=messages,
-            base_url=base_url,
-            api_key=config.openai_api_key,
         )
 
         content = extract_chat_content(response)
@@ -126,17 +167,17 @@ async def simplify_menu_item_description_litellm(item: Dict, session_config: dic
             )
             system_message = "You write concise menu descriptions. Always respond with exactly one complete sentence."
 
-        response = await chat_completions(
-            model=description_model,
+        response = await chat_completions_with_nim_fallback(
+            primary_model=description_model,
+            fallback_model=config.nim_text_fallback_model,
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": prompt}
             ],
-            base_url=get_base_url_with_v1(),
-            api_key=config.openai_api_key,
-            max_tokens=500,
-            temperature=0.7,
-            max_completion_tokens=500  # Some models use this instead
+            # This parameter works across the curated providers. Sending the
+            # older max_tokens and temperature fields as well breaks newer
+            # OpenAI and Anthropic routes exposed by the proxy.
+            max_completion_tokens=500,
         )
 
         # Log finish reason to debug truncation

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import './App.css';
 
 interface MenuItem {
@@ -16,6 +16,20 @@ const normalizeName = (s: string) => s.trim().toLowerCase();
 // Define constants for backend communication
 const EFFECTIVE_HOSTNAME = window.location.hostname;
 const BACKEND_PORT = '8005';
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif']);
+
+const getClipboardImage = (clipboardData: DataTransfer): File | null => {
+  const pastedFile = Array.from(clipboardData.files).find((item) =>
+    item.type.startsWith('image/')
+  );
+  if (pastedFile) return pastedFile;
+
+  const pastedItem = Array.from(clipboardData.items).find(
+    (item) => item.kind === 'file' && item.type.startsWith('image/')
+  );
+  return pastedItem?.getAsFile() ?? null;
+};
 
 // NVIDIA-specific image generation models
 const NVIDIA_IMAGE_MODELS = [
@@ -172,22 +186,7 @@ function App() {
   };
   const closeModal = () => setModalOpen(false);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      const selectedFile = event.target.files[0];
-      setFile(selectedFile);
-      // Create a URL for the uploaded image preview
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setUploadedImageUrl(reader.result as string);
-      };
-      reader.readAsDataURL(selectedFile);
-      // Reset state when a new file is selected
-      resetState(false); // Don't clear the file/image preview
-    }
-  };
-
-  const resetState = (clearFile = true) => {
+  const resetState = useCallback((clearFile = true) => {
     setStatus('');
     setMenuItems([]);
     setImages({});
@@ -206,7 +205,50 @@ function App() {
         wsRef.current.close();
         wsRef.current = null;
     }
-  }
+  }, []);
+
+  const acceptImageFile = useCallback((selectedFile: File): boolean => {
+    if (selectedFile.size > MAX_UPLOAD_BYTES) {
+      setErrors(['Image must be 10 MB or smaller.']);
+      return false;
+    }
+    if (!ALLOWED_IMAGE_TYPES.has(selectedFile.type)) {
+      setErrors(['Upload a JPEG, PNG, or GIF image.']);
+      return false;
+    }
+
+    setFile(selectedFile);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setUploadedImageUrl(reader.result as string);
+    };
+    reader.readAsDataURL(selectedFile);
+    resetState(false);
+    return true;
+  }, [resetState]);
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0];
+    if (selectedFile && !acceptImageFile(selectedFile)) {
+      event.target.value = '';
+    }
+  };
+
+  useEffect(() => {
+    if (file) return;
+
+    const handleDocumentPaste = (event: ClipboardEvent) => {
+      if (!event.clipboardData) return;
+      const pastedImage = getClipboardImage(event.clipboardData);
+      if (!pastedImage) return;
+
+      event.preventDefault();
+      acceptImageFile(pastedImage);
+    };
+
+    document.addEventListener('paste', handleDocumentPaste);
+    return () => document.removeEventListener('paste', handleDocumentPaste);
+  }, [acceptImageFile, file]);
 
   const handleUploadAndGenerate = async () => {
     if (!file) return;
@@ -506,15 +548,22 @@ function App() {
               id="fileUpload"
               ref={fileInputRef}
               onChange={handleFileChange}
-              accept="image/png, image/jpeg, image/gif, application/pdf" // Accept images and PDFs
+              accept="image/png, image/jpeg, image/gif"
               style={{ display: 'none' }} // Hide the default input
             />
             {/* Use label to make the whole area clickable */}
-            <label htmlFor="fileUpload" className="upload-box">
+            <label
+              htmlFor="fileUpload"
+              className="upload-box"
+              tabIndex={0}
+              aria-describedby="uploadHint"
+              aria-label="Upload a menu image by choosing, dropping, or pasting a file"
+              aria-keyshortcuts="Control+V Meta+V"
+            >
               <div className="upload-content"> {/* Added wrapper for centering */}
                 <div className="upload-icon">☁️</div>
-                <p>Click to upload or drag and drop</p>
-                <p className="upload-hint">PNG, JPG, GIF up to 10MB</p>
+                <p>Click to upload, drag and drop, or paste an image</p>
+                <p id="uploadHint" className="upload-hint">PNG, JPG, GIF up to 10MB · Ctrl/⌘ + V</p>
               </div>
             </label>
           </div>

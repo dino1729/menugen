@@ -289,9 +289,15 @@ h1 {
   color: var(--text-color); /* Use variable */
 }
 
-.upload-box:hover {
+.upload-box:hover,
+.upload-box:focus-visible {
   background-color: var(--bg-color); /* Use variable */
   border-color: var(--text-color); /* Use variable with opacity */
+}
+
+.upload-box:focus-visible {
+  outline: 3px solid var(--icon-color);
+  outline-offset: 4px;
 }
 
 /* Wrapper for centering content inside the dashed box */

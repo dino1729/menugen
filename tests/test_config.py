@@ -22,6 +22,7 @@ from config import (
     get_base_url_with_v1,
     get_retry_status_codes,
     get_nvidia_model_params,
+    reconcile_litellm_models,
 )
 
 
@@ -36,8 +37,8 @@ class TestAppConfigDefaults:
     def test_default_models(self):
         """Test default model values."""
         cfg = AppConfig()
-        assert cfg.vision_model == "gpt-4o"
-        assert cfg.description_model == "gemini-3-flash-preview"
+        assert cfg.vision_model == "gemini-3.5-flash"
+        assert cfg.description_model == "gemini-3.5-flash"
         assert cfg.image_gen_model == "gemini-3-pro-image-preview"
         assert cfg.video_gen_model == "veo-3.1-generate-001"
 
@@ -53,6 +54,46 @@ class TestAppConfigDefaults:
         assert cfg.text_models == []
         assert cfg.image_models == []
         assert cfg.video_models == []
+
+
+class TestLiteLLMModelReconciliation:
+    """Test reconciliation between curated aliases and the live proxy catalog."""
+
+    def test_filters_unavailable_curated_models(self):
+        cfg = AppConfig(
+            vision_model="vision-live",
+            description_model="text-live",
+            image_gen_model="image-live",
+            video_gen_model="video-live",
+        )
+        cfg.vision_models = ["vision-live", "vision-stale"]
+        cfg.text_models = ["text-live", "text-stale"]
+        cfg.image_models = ["image-live", "image-stale"]
+        cfg.video_models = ["video-live", "video-stale"]
+        cfg.available_models = [
+            "vision-live",
+            "text-live",
+            "image-live",
+            "video-live",
+        ]
+
+        reconcile_litellm_models(cfg)
+
+        assert cfg.vision_models == ["vision-live"]
+        assert cfg.text_models == ["text-live"]
+        assert cfg.image_models == ["image-live"]
+        assert cfg.video_models == ["video-live"]
+
+    def test_rejects_unavailable_required_default(self):
+        cfg = AppConfig(vision_model="missing-vision")
+        cfg.available_models = [
+            cfg.description_model,
+            cfg.image_gen_model,
+            cfg.video_gen_model,
+        ]
+
+        with pytest.raises(RuntimeError, match="vision=missing-vision"):
+            reconcile_litellm_models(cfg)
 
 
 class TestNvidiaConfig:
@@ -218,10 +259,10 @@ class TestConfigEnvironmentOverride:
 class TestConfigJsonContent:
     """Tests that verify config.json content is correctly loaded."""
 
-    def test_vision_models_whitelist_has_gpt4o(self, app_config):
-        """Test that vision models whitelist includes gpt-4o."""
+    def test_vision_models_whitelist_has_default(self, app_config):
+        """Test that vision models whitelist includes the configured default."""
         if app_config.vision_models:
-            assert "gpt-4o" in app_config.vision_models
+            assert app_config.vision_model in app_config.vision_models
 
     def test_text_models_whitelist_exists(self, app_config):
         """Test that text models whitelist is populated."""

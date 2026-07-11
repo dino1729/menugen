@@ -59,8 +59,8 @@ class AppConfig:
     openai_api_key: str = ""
 
     # Default models
-    vision_model: str = "gpt-4o"
-    description_model: str = "gemini-3-flash-preview"
+    vision_model: str = "gemini-3.5-flash"
+    description_model: str = "gemini-3.5-flash"
     image_gen_model: str = "gemini-3-pro-image-preview"
     video_gen_model: str = "veo-3.1-generate-001"
 
@@ -203,6 +203,53 @@ def get_base_url_with_v1() -> str:
     return base
 
 
+def reconcile_litellm_models(config: AppConfig) -> None:
+    """Remove curated aliases that the connected LiteLLM proxy does not expose."""
+    if not config.available_models:
+        return
+
+    available = set(config.available_models)
+    model_lists = {
+        "vision": "vision_models",
+        "text": "text_models",
+        "image": "image_models",
+        "video": "video_models",
+    }
+    for role, attribute in model_lists.items():
+        configured = getattr(config, attribute)
+        filtered = [model for model in configured if model in available]
+        removed = [model for model in configured if model not in available]
+        setattr(config, attribute, filtered)
+        if removed:
+            logger.warning(
+                "Removed %d unavailable %s model(s): %s",
+                len(removed),
+                role,
+                ", ".join(removed),
+            )
+
+    required_defaults = {
+        "vision": config.vision_model,
+        "description": config.description_model,
+        "video": config.video_gen_model,
+    }
+    if config.image_provider == "litellm":
+        required_defaults["image"] = config.image_gen_model
+
+    missing_defaults = {
+        role: model
+        for role, model in required_defaults.items()
+        if model not in available
+    }
+    if missing_defaults:
+        details = ", ".join(
+            f"{role}={model}" for role, model in missing_defaults.items()
+        )
+        raise RuntimeError(
+            f"Configured default model(s) are unavailable from LiteLLM: {details}"
+        )
+
+
 async def validate_litellm_connectivity() -> bool:
     """
     Validate LiteLLM proxy is reachable. Called at startup.
@@ -243,11 +290,14 @@ async def validate_litellm_connectivity() -> bool:
                 config.available_models = [
                     m.get("id") for m in data.get("data", []) if m.get("id")
                 ]
+                reconcile_litellm_models(config)
                 logger.info(
                     f"LiteLLM proxy at {base_url} is reachable, "
                     f"fetched {len(config.available_models)} models"
                 )
                 return True
+        except RuntimeError:
+            raise
         except Exception as e:
             logger.error(f"Models endpoint check failed: {e}")
 

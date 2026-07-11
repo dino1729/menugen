@@ -3,7 +3,7 @@ Tests for video generation using LiteLLM proxy.
 
 Supports models like:
 - sora-2: OpenAI's Sora video generation model
-- veo-3.0-generate-001: Google's Veo 3.0 video generation model
+- sora-2-pro: OpenAI's higher-quality Sora video generation model
 - veo-3.1-generate-001: Google's Veo 3.1 video generation model
 
 Uses the LiteLLM /v1/videos endpoint as documented at:
@@ -41,9 +41,9 @@ class TestVideoGeneration:
 
     # Video model configurations
     VIDEO_MODELS = {
-        "veo-3.0": "veo-3.0-generate-001",
         "veo-3.1": "veo-3.1-generate-001",
         "sora-2": "sora-2",
+        "sora-2-pro": "sora-2-pro",
     }
 
     async def _wait_for_video(
@@ -96,9 +96,9 @@ class TestVideoGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(300)  # 5 minute timeout for video generation
-    async def test_veo_3_0_simple_video(self, litellm_config, video_outputs_dir):
-        """Test simple video generation with Veo 3.0 model."""
-        model = self.VIDEO_MODELS["veo-3.0"]
+    async def test_sora_2_simple_video(self, litellm_config, video_outputs_dir):
+        """Test simple video generation with Sora 2."""
+        model = self.VIDEO_MODELS["sora-2"]
         prompt = "A cat playing with a ball of yarn in a cozy living room"
         
         print(f"\n⏳ Generating video with {model}...")
@@ -121,7 +121,7 @@ class TestVideoGeneration:
             print(f"   Initial status: {result.get('status', 'unknown')}")
             
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            output_path = video_outputs_dir / f"veo30_cat_{timestamp}"
+            output_path = video_outputs_dir / f"sora2_cat_{timestamp}"
             
             # Save initial response metadata
             metadata = {
@@ -176,7 +176,7 @@ class TestVideoGeneration:
             elif e.status_code == 429:
                 pytest.skip(f"Video generation rate limited after retries: {e}")
             elif e.status_code == 400:
-                error_path = video_outputs_dir / f"veo30_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                error_path = video_outputs_dir / f"sora2_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
                 error_path.write_text(json.dumps({
                     "model": model,
                     "prompt": prompt,
@@ -279,9 +279,9 @@ class TestVideoGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(300)
-    async def test_veo_food_video(self, litellm_config, video_outputs_dir):
+    async def test_food_video(self, litellm_config, video_outputs_dir):
         """Test food-related video generation (relevant to menu app)."""
-        model = self.VIDEO_MODELS["veo-3.0"]
+        model = litellm_config["video_model"]
         prompt = (
             "Close-up of a chef's hands plating a gourmet dish, "
             "adding final garnishes, steam rising from hot food, professional kitchen"
@@ -307,7 +307,7 @@ class TestVideoGeneration:
             print(f"   Initial status: {result.get('status', 'unknown')}")
             
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            output_path = video_outputs_dir / f"veo_food_plating_{timestamp}"
+            output_path = video_outputs_dir / f"video_food_plating_{timestamp}"
             
             # Save initial response metadata
             metadata = {
@@ -359,7 +359,7 @@ class TestVideoGeneration:
             
         except ProxyClientError as e:
             if e.status_code in (404, 400, 429):
-                error_path = video_outputs_dir / f"veo_food_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                error_path = video_outputs_dir / f"video_food_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
                 error_path.write_text(json.dumps({
                     "model": model,
                     "prompt": prompt,
@@ -370,16 +370,16 @@ class TestVideoGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(600)  # 10 minute timeout for comparison test
-    async def test_veo_model_comparison(self, litellm_config, video_outputs_dir):
-        """Compare video generation between different Veo models."""
+    async def test_video_model_comparison(self, litellm_config, video_outputs_dir):
+        """Compare the configured non-Sora video models."""
         prompt = "A colorful butterfly landing on a flower in a garden"
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
         results = {}
         
         for version, model in self.VIDEO_MODELS.items():
-            if version == "sora-2":
-                continue  # Skip Sora for this comparison
+            if version.startswith("sora"):
+                continue  # Sora has a dedicated integration test above.
                 
             print(f"\n⏳ Testing {version} ({model})...")
             
@@ -423,7 +423,7 @@ class TestVideoGeneration:
                         )
                         
                         # Save individual video file
-                        video_path = video_outputs_dir / f"veo_comparison_{version}_{timestamp}.mp4"
+                        video_path = video_outputs_dir / f"video_comparison_{version}_{timestamp}.mp4"
                         video_path.write_bytes(video_bytes)
                         results[version]["video_file"] = str(video_path.name)
                         print(f"  ✓ {version} video saved to: {video_path}")
@@ -443,12 +443,14 @@ class TestVideoGeneration:
                 print(f"  ✗ {version} failed: {e}")
 
         # Save comparison results
-        comparison_path = video_outputs_dir / f"veo_comparison_{timestamp}.json"
+        comparison_path = video_outputs_dir / f"video_comparison_{timestamp}.json"
         comparison_path.write_text(json.dumps({
             "prompt": prompt,
             "seconds": "5",
             "size": "1280x720",
-            "models_tested": [k for k in self.VIDEO_MODELS.keys() if k != "sora-2"],
+            "models_tested": [
+                key for key in self.VIDEO_MODELS if not key.startswith("sora")
+            ],
             "results": results,
         }, indent=2))
         
@@ -475,7 +477,7 @@ class TestVideoGenerationDirect:
         # 
         # client = aiplatform.gapic.PredictionServiceClient()
         # response = client.predict(
-        #     endpoint="projects/{project}/locations/{location}/publishers/google/models/veo-3.0-generate-001",
+        #     endpoint="projects/{project}/locations/{location}/publishers/google/models/veo-3.1-generate-001",
         #     instances=[{"prompt": "..."}],
         # )
         pass

@@ -3,41 +3,60 @@
   "version": "1.0.0",
 
   "defaults": {
-    "vision_model": "gpt-4o",
-    "description_model": "gemini-3-flash-preview",
+    "vision_model": "gemini-3.5-flash",
+    "description_model": "gemini-3.5-flash",
     "image_gen_model": "gemini-3-pro-image-preview",
     "video_gen_model": "veo-3.1-generate-001"
   },
 
   "whitelists": {
     "vision_models": [
-      "gpt-4o",
-      "gpt-4.1",
-      "gpt-5",
-      "gpt-5-mini",
-      "gemini-2.5-pro",
-      "gemini-2.5-flash",
-      "gemini-3-pro-preview",
+      "gemini-3.5-flash",
+      "gemini-3.1-pro-preview",
       "gemini-3-flash-preview",
-      "claude-sonnet-4",
-      "claude-opus-4-5"
+      "gpt-5.4-mini",
+      "gpt-5.4",
+      "gpt-5.5",
+      "gpt-5.6-luna",
+      "gpt-5.6-terra",
+      "gpt-5.6-sol",
+      "claude-sonnet-4-6",
+      "claude-sonnet-5",
+      "claude-opus-4-8",
+      "nemotron-3-nano-omni-30b-a3b-reasoning",
+      "kimi-k2.6"
     ],
     "text_models": [
-      "gpt-4o",
-      "gpt-5-nano",
+      "gemini-3.5-flash",
+      "gemini-3.1-pro-preview",
       "gemini-3-flash-preview",
-      "gemini-2.5-flash",
-      "claude-sonnet-4",
-      "deepseek-v3.1",
-      "llama-3.3-70b-instruct"
+      "gpt-5.4-nano",
+      "gpt-5.4-mini",
+      "gpt-5.4",
+      "gpt-5.5",
+      "gpt-5.6-luna",
+      "gpt-5.6-terra",
+      "gpt-5.6-sol",
+      "claude-sonnet-4-6",
+      "claude-sonnet-5",
+      "claude-opus-4-8",
+      "deepseek-v4-flash",
+      "qwen3.6-27b",
+      "nemotron-3-nano-30b-a3b",
+      "nemotron-3-super-v3",
+      "nemotron-3-ultra",
+      "minimax-m3",
+      "kimi-k2.6",
+      "glm5.2",
+      "mistral-large-3-675b-instruct"
     ],
     "image_models": [
-      "gemini-3-pro-image-preview",
-      
+      "gemini-3-pro-image-preview"
     ],
     "video_models": [
       "veo-3.1-generate-001",
-      "veo-3.0-generate-001"
+      "sora-2",
+      "sora-2-pro"
     ]
   },
 

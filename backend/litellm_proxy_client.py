@@ -408,7 +408,7 @@ async def video_generations(
     See: https://docs.litellm.ai/docs/providers/openai/videos
 
     Args:
-        model: Video model name (e.g., "sora-2", "veo-3.0-generate-001")
+        model: Video model name (e.g., "sora-2", "veo-3.1-generate-001")
         prompt: Text description of the video to generate
         base_url: Override default base URL from config
         api_key: Override default API key from config

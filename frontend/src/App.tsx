@@ -75,10 +75,10 @@ function App() {
   // Configuration and model selection state
   const [showSettings, setShowSettings] = useState(false);
   const [imageProvider, setImageProvider] = useState<string>('litellm');
-  const [visionModel, setVisionModel] = useState<string>('gpt-4o');
+  const [visionModel, setVisionModel] = useState<string>('gemini-3.5-flash');
   const [imageGenModel, setImageGenModel] = useState<string>('gemini-3-pro-image-preview');
   const [videoGenModel, setVideoGenModel] = useState<string>('veo-3.1-generate-001');
-  const [descriptionModel, setDescriptionModel] = useState<string>('gemini-3-flash-preview');
+  const [descriptionModel, setDescriptionModel] = useState<string>('gemini-3.5-flash');
 
   // Available models from backend (curated whitelists from config.json)
   const [availableModels, setAvailableModels] = useState<{
@@ -102,10 +102,10 @@ function App() {
           const config = await response.json();
           // Set current model selections from backend defaults
           setImageProvider(config.image_provider || 'litellm');
-          setVisionModel(config.vision_model || 'gpt-4o');
+          setVisionModel(config.vision_model || 'gemini-3.5-flash');
           setImageGenModel(config.image_gen_model || 'gemini-3-pro-image-preview');
           setVideoGenModel(config.video_gen_model || 'veo-3.1-generate-001');
-          setDescriptionModel(config.description_model || 'gemini-3-flash-preview');
+          setDescriptionModel(config.description_model || 'gemini-3.5-flash');
 
           // Use curated whitelists from config.json if available
           if (config.whitelists) {

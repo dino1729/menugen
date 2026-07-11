@@ -12,6 +12,8 @@ from pathlib import Path
 import httpx
 import pytest
 
+pytestmark = pytest.mark.integration
+
 # Import our proxy client instead of litellm SDK
 from backend.litellm_proxy_client import (
     image_generations,

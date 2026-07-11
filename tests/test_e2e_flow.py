@@ -26,6 +26,8 @@ from typing import Dict, List, Optional
 import httpx
 import pytest
 
+pytestmark = pytest.mark.integration
+
 # Import our proxy client and NVIDIA client
 from backend.litellm_proxy_client import (
     chat_completions,

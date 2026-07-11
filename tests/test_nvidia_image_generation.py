@@ -19,11 +19,13 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 # Import our hardened NVIDIA client with fallback and retry logic
 from backend.nvidia_image_generation import (
     generate_image_nvidia_raw,
-    NVIDIA_DEFAULTS,
 )
+from config import get_nvidia_model_params
 from client_utils import ImageGenerationError
 
 
@@ -98,7 +100,7 @@ class TestNvidiaImageGeneration:
                 "provider": "nvidia",
                 "model": nvidia_config["model_name"],
                 "prompt": prompt,
-                "parameters": NVIDIA_DEFAULTS,
+                "parameters": get_nvidia_model_params("stabilityai/stable-diffusion-3-medium"),
             }
         )
         

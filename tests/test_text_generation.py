@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 # Import our proxy client instead of litellm SDK
 from litellm_proxy_client import (
     chat_completions,

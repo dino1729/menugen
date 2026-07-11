@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 # Import our proxy client with video support
 from backend.litellm_proxy_client import (
     video_generations,

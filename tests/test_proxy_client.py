@@ -283,6 +283,7 @@ class TestProxyClientError:
         assert error.response_body == '{"message": "rate limited"}'
 
 
+@pytest.mark.integration
 class TestChatCompletionsIntegration:
     """Integration tests for chat_completions (requires running proxy)."""
 
@@ -322,6 +323,7 @@ class TestChatCompletionsIntegration:
         assert len(response["choices"]) > 0
 
 
+@pytest.mark.integration
 class TestCheckProxyHealth:
     """Tests for check_proxy_health function."""
 

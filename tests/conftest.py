@@ -85,8 +85,8 @@ def _check_proxy_health(base_url: str, api_key: str, timeout: float = 10.0) -> d
     return result
 
 
-@pytest.fixture(scope="session", autouse=True)
-def preflight_check():
+@pytest.fixture(scope="session")
+def proxy_health():
     """
     Session-scoped preflight check that runs once before all tests.
 
@@ -117,8 +117,7 @@ def preflight_check():
             f"Error: {error_details}\n\n"
             f"Troubleshooting steps:\n"
             f"1. Ensure your LiteLLM proxy is running:\n"
-            f"   docker ps | grep litellm\n"
-            f"   or: litellm --config /path/to/config.yaml\n\n"
+            f"   litellm --config /path/to/config.yaml\n\n"
             f"2. Check the proxy URL in backend/.env:\n"
             f"   OPENAI_BASE_URL={base_url}\n\n"
             f"3. Verify the proxy is accepting connections:\n"
@@ -144,7 +143,7 @@ def app_config() -> AppConfig:
 
 
 @pytest.fixture
-def litellm_config(app_config):
+def litellm_config(app_config, proxy_health):
     """Fixture providing LiteLLM configuration from the config module."""
     return {
         "base_url": app_config.openai_base_url.rstrip("/"),
